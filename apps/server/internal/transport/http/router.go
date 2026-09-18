@@ -22,9 +22,9 @@ func NewHandler(
 	webOrigin string,
 ) *Handler {
 	return &Handler{
-		service: service,
+		service:    service,
 		subscriber: subscriber,
-		webOrigin: webOrigin,
+		webOrigin:  webOrigin,
 	}
 }
 
