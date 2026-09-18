@@ -1,0 +1,45 @@
+services:
+  vision:
+    build:
+      context: ./apps/vision
+    environment:
+      PLATEWATCH_SERVER_URL: ${PLATEWATCH_SERVER_URL:-http://server:8080}
+      PLATEWATCH_VISION_PORT: ${PLATEWATCH_VISION_PORT:-8000}
+    ports:
+      - "${PLATEWATCH_VISION_PORT:-8000}:8000"
+    depends_on:
+      - server
+
+  server:
+    build:
+      context: ./apps/server
+    environment:
+      PLATEWATCH_SERVER_PORT: ${PLATEWATCH_SERVER_PORT:-8080}
+      PLATEWATCH_FLAGGED_PLATES: ${PLATEWATCH_FLAGGED_PLATES:-ABC1234,XYZ9876}
+      PLATEWATCH_WEB_ORIGIN: ${PLATEWATCH_WEB_ORIGIN:-http://localhost:3000}
+    ports:
+      - "${PLATEWATCH_SERVER_PORT:-8080}:8080"
+
+  web:
+    build:
+      context: ./apps/web
+      args:
+        VITE_API_BASE_URL: http://localhost:${PLATEWATCH_SERVER_PORT:-8080}
+    ports:
+      - "3000:80"
+    depends_on:
+      - server
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-platewatch}
+      POSTGRES_USER: ${POSTGRES_USER:-platewatch}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-platewatch_dev_only}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - platewatch_postgres:/var/lib/postgresql/data
+
+volumes:
+  platewatch_postgres:

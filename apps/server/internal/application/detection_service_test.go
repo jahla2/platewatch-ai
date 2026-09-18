@@ -1,0 +1,71 @@
+package application
+
+import (
+	"context"
+	"testing"
+
+	"github.com/jahla2/platewatch-ai/apps/server/internal/domain"
+)
+
+type repositoryFake struct {
+	saved []domain.DetectionEvent
+}
+
+func (r *repositoryFake) Save(_ context.Context, event domain.DetectionEvent) error {
+	r.saved = append(r.saved, event)
+	return nil
+}
+
+func (r *repositoryFake) List(_ context.Context, _ int) ([]domain.DetectionEvent, error) {
+	return r.saved, nil
+}
+
+type watchlistFake struct{}
+
+func (watchlistFake) IsFlagged(_ context.Context, plate string) (bool, error) {
+	return plate == "ABC1234", nil
+}
+
+type publisherFake struct {
+	events []domain.DetectionEvent
+}
+
+func (p *publisherFake) Publish(_ context.Context, event domain.DetectionEvent) error {
+	p.events = append(p.events, event)
+	return nil
+}
+
+func TestCreateNormalizesAndFlagsPlate(t *testing.T) {
+	repository := &repositoryFake{}
+	publisher := &publisherFake{}
+	service := NewDetectionService(repository, watchlistFake{}, publisher)
+
+	event, err := service.Create(context.Background(), CreateDetectionInput{
+		CameraID:   "CAM-01",
+		TrackID:    42,
+		Plate:      "abc-1234",
+		Confidence: 0.94,
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if event.Plate != "ABC1234" {
+		t.Fatalf("Plate = %q, want ABC1234", event.Plate)
+	}
+	if !event.Flagged {
+		t.Fatal("Flagged = false, want true")
+	}
+	if len(repository.saved) != 1 || len(publisher.events) != 1 {
+		t.Fatal("event was not saved and published exactly once")
+	}
+}
+
+func TestCreateRejectsInvalidConfidence(t *testing.T) {
+	service := NewDetectionService(&repositoryFake{}, watchlistFake{}, &publisherFake{})
+	_, err := service.Create(context.Background(), CreateDetectionInput{
+		CameraID: "CAM-01", TrackID: 1, Plate: "ABC1234", Confidence: 1.5,
+	})
+	if err == nil {
+		t.Fatal("Create() error = nil, want validation error")
+	}
+}
