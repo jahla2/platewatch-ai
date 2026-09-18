@@ -6,7 +6,7 @@ Real-time license plate detection, tracking, OCR consensus, watchlist matching, 
 
 PlateWatch uses a small-service architecture with clear responsibilities:
 
-- **Python** — computer-vision pipeline and OCR consensus.
+- **Python** — camera/video ingestion, computer vision, tracking, plate OCR, and OCR consensus.
 - **Go** — validation, watchlist decisions, persistence boundaries, and realtime event delivery.
 - **React + TypeScript** — operator dashboard.
 - **PostgreSQL** — target persistent store.
@@ -29,7 +29,7 @@ docs/
   ci.yml
 ```
 
-## Run locally
+## Run the platform locally
 
 ```bash
 cp .env.example .env
@@ -42,9 +42,45 @@ Open:
 - Go API: http://localhost:8080/healthz
 - Python vision API: http://localhost:8000/healthz
 
-## End-to-end development test
+## Run motorcycle detection
 
-Until detector/OCR adapters are added, the Python service accepts OCR candidates so the consensus, Go event flow, watchlist logic, and dashboard can be tested end to end.
+The detector accepts a webcam index, video file, or RTSP URL. Heavy computer-vision dependencies are isolated in the optional `vision` extra so normal API/unit-test development stays lightweight.
+
+```bash
+cd apps/vision
+python -m pip install -e ".[vision,dev]"
+```
+
+Webcam:
+
+```bash
+platewatch-detect --source 0 --output ../../artifacts/webcam.mp4
+```
+
+Recorded video:
+
+```bash
+platewatch-detect \
+  --source ./sample.mp4 \
+  --model yolo11n.pt \
+  --confidence 0.35 \
+  --stride 2 \
+  --output ../../artifacts/detected.mp4
+```
+
+RTSP:
+
+```bash
+platewatch-detect --source "rtsp://USER:PASSWORD@CAMERA/live"
+```
+
+Do not commit RTSP credentials. Use local environment/configuration when connecting to real cameras.
+
+The command reports processing metrics such as frames read, frames inferred, detections, effective FPS, and average inference latency. With `--output`, detected motorcycles are written to an annotated MP4 with bounding boxes.
+
+## End-to-end plate-event development test
+
+Until the plate detector/OCR adapter is connected to the camera pipeline, the Python API also accepts OCR candidates so consensus, Go event flow, watchlist logic, and the dashboard can be tested end to end.
 
 Send this request three times:
 
@@ -59,24 +95,27 @@ On the third matching candidate, Python confirms the plate and sends it to Go. T
 ## Engineering rules
 
 - Domain/application layers do not import database or ML frameworks.
-- Services depend on narrow interfaces/protocols for external concerns.
+- Camera and detector implementations sit behind narrow Python protocols.
+- Heavy CV dependencies are optional for fast CI and backend/UI development.
 - Slow realtime clients cannot block event ingestion.
 - Secrets, RTSP credentials, private plate datasets, and model artifacts are not committed.
 - Features are delivered through named branches, tests, pull requests, and review.
 
 ## Current milestone
 
-Implemented in the foundation:
+Implemented:
 
+- OpenCV camera/video/RTSP frame source
+- small-model motorcycle detection adapter
+- configurable confidence, image size, device, and inference stride
+- optional annotated MP4 output
+- pipeline FPS and inference-latency metrics
 - plate normalization and temporal OCR consensus
-- one-confirmed-event-per-track processing
 - Python-to-Go event publishing
-- Go application service with repository/watchlist/publisher ports
-- realtime Server-Sent Events (SSE)
+- Go clean application boundary and realtime SSE
 - React detection dashboard
-- Docker Compose
-- Python, Go, and React CI
+- Docker Compose and CI
 
-Next: camera capture, motorcycle detection, tracking, and license-plate detector adapters.
+Next: object tracking so each motorcycle receives a stable track ID before license-plate detection and OCR.
 
 See [docs/PRD.md](docs/PRD.md) and [docs/architecture.md](docs/architecture.md).

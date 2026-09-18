@@ -35,10 +35,11 @@ Thumbs.db
 data/raw/
 data/private/
 data/events/
-models/*.pt
-models/*.pth
-models/*.onnx
-models/*.engine
+artifacts/
+*.pt
+*.pth
+*.onnx
+*.engine
 
 # Logs
 *.log

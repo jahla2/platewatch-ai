@@ -13,10 +13,24 @@ This keeps computer-vision workloads independent from API and UI concerns.
 ## V1 data flow
 
 ```text
-Camera / test video
+Camera / video / RTSP
         |
         v
-Python vision pipeline
+FrameSource protocol
+        |
+        v
+CameraDetectionPipeline
+        |
+        v
+VehicleDetector protocol
+        |
+        +--> Ultralytics motorcycle adapter
+        |
+        v
+tracking (next milestone)
+        |
+        v
+plate detector + OCR
         |
         | POST confirmed plate event
         v
@@ -33,15 +47,30 @@ Go application service
                React UI
 ```
 
-The initial repository uses in-memory Go adapters so the application boundary is executable and testable immediately. PostgreSQL is included in local infrastructure and will replace the in-memory repository through the existing repository interface.
+The initial Go repository adapter is in memory so the application boundary is executable and testable immediately. PostgreSQL is included in local infrastructure and will replace it through the existing repository interface.
 
-## Clean architecture boundaries
+## Python vision boundaries
 
-### Python
+The core pipeline knows only these ports:
 
-The Python application depends on protocols rather than concrete model implementations. Detector, recognizer, tracker, and event publisher adapters can be changed without modifying plate consensus rules.
+- `FrameSource`
+- `VehicleDetector`
+- `FrameAnalysisSink`
+- `DetectionEventPublisher`
 
-### Go
+Concrete camera and model libraries remain in infrastructure adapters.
+
+Current adapters:
+
+- `OpenCVFrameSource` — webcam, local video, or RTSP source
+- `UltralyticsMotorcycleDetector` — small configurable detector
+- `OpenCVAnnotatedVideoSink` — optional bounding-box MP4 output
+
+Heavy CV dependencies are optional in `pyproject.toml`. This keeps normal unit tests and CI lightweight while the Docker image installs the full vision runtime.
+
+The detection loop can skip inference using `inference_stride`. For example, stride 2 reads every frame but runs the detector on frames 1, 3, 5, and so on. Tracking will later carry identities across skipped frames.
+
+## Go boundaries
 
 The Go application service depends on interfaces for:
 
@@ -51,7 +80,7 @@ The Go application service depends on interfaces for:
 
 Transport and persistence are adapters around the application layer. Domain objects contain no HTTP or database code.
 
-### React
+## React boundary
 
 The frontend isolates API/event-stream code from rendering. Components receive domain-shaped data instead of knowing transport details.
 
@@ -59,12 +88,11 @@ The frontend isolates API/event-stream code from rendering. Components receive d
 
 Realtime detection delivery is server-to-browser only. Server-Sent Events provide automatic browser reconnection and require no third-party Go dependency. If the product later needs bidirectional realtime commands, the realtime port can be backed by WebSockets without changing the detection application service.
 
-## Planned adapters
+## Remaining V1 adapters
 
-1. YOLO motorcycle detector
-2. ByteTrack/BoT-SORT tracker
-3. fine-tuned license-plate detector
-4. OCR adapter
-5. PostgreSQL repository
-6. snapshot/object-storage adapter
-7. RTSP/GStreamer frame source
+1. object tracker
+2. fine-tuned license-plate detector
+3. OCR adapter
+4. PostgreSQL repository
+5. snapshot/object-storage adapter
+6. low-latency latest-frame RTSP reader for multi-camera deployment
