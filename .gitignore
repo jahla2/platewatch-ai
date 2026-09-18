@@ -1,0 +1,44 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+
+# Go
+apps/server/bin/
+apps/server/tmp/
+*.test
+coverage.out
+
+# Node / React
+node_modules/
+apps/web/dist/
+*.tsbuildinfo
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Runtime data and model artifacts
+data/raw/
+data/private/
+data/events/
+models/*.pt
+models/*.pth
+models/*.onnx
+models/*.engine
+
+# Logs
+*.log
