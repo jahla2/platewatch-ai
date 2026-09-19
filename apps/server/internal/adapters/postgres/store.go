@@ -45,8 +45,9 @@ func (s *Store) Save(ctx context.Context, event domain.DetectionEvent) error {
 	_, err := s.pool.Exec(
 		ctx,
 		`INSERT INTO detection_events
-			(id, camera_id, track_id, plate_number, confidence, flagged, detected_at)
-		  VALUES ($1, $2, $3, $4, $5, $6, $7)
+			(id, camera_id, track_id, plate_number, confidence, flagged,
+			 snapshot_url, plate_crop_url, detected_at)
+		  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		  ON CONFLICT (id) DO NOTHING`,
 		event.ID,
 		event.CameraID,
@@ -54,6 +55,8 @@ func (s *Store) Save(ctx context.Context, event domain.DetectionEvent) error {
 		event.Plate,
 		event.Confidence,
 		event.Flagged,
+		event.SnapshotURL,
+		event.PlateCropURL,
 		event.DetectedAt,
 	)
 	return err
@@ -62,7 +65,8 @@ func (s *Store) Save(ctx context.Context, event domain.DetectionEvent) error {
 func (s *Store) List(ctx context.Context, limit int) ([]domain.DetectionEvent, error) {
 	rows, err := s.pool.Query(
 		ctx,
-		`SELECT id, camera_id, track_id, plate_number, confidence, flagged, detected_at
+		`SELECT id, camera_id, track_id, plate_number, confidence, flagged,
+		          snapshot_url, plate_crop_url, detected_at
 		   FROM detection_events
 		  ORDER BY detected_at DESC
 		  LIMIT $1`,
@@ -83,6 +87,8 @@ func (s *Store) List(ctx context.Context, limit int) ([]domain.DetectionEvent, e
 			&event.Plate,
 			&event.Confidence,
 			&event.Flagged,
+			&event.SnapshotURL,
+			&event.PlateCropURL,
 			&event.DetectedAt,
 		); err != nil {
 			return nil, err
