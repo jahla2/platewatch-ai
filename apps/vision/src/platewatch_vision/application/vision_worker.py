@@ -8,8 +8,8 @@ from platewatch_vision.domain.models import PlateCandidate
 from platewatch_vision.domain.ports import (
     FrameSource,
     ImageProcessor,
-    OCRRecognizer,
     ObjectTracker,
+    OCRRecognizer,
     PlateDetector,
     VehicleDetector,
 )
