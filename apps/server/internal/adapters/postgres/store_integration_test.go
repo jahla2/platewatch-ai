@@ -29,15 +29,16 @@ func TestStorePersistsDetectionAndWatchlist(t *testing.T) {
 	}
 
 	entry, err := store.UpsertWatchlist(ctx, domain.WatchlistEntry{
-		Plate:  "ABC1234",
-		Reason: "test watchlist",
-		Active: true,
+		PlateText: "ABC-1234",
+		PlateKey:  "ABC1234",
+		Reason:    "test watchlist",
+		Active:    true,
 	})
 	if err != nil {
 		t.Fatalf("UpsertWatchlist() error = %v", err)
 	}
-	if entry.Plate != "ABC1234" {
-		t.Fatalf("watchlist plate = %q", entry.Plate)
+	if entry.PlateText != "ABC-1234" || entry.PlateKey != "ABC1234" {
+		t.Fatalf("watchlist entry = %#v", entry)
 	}
 
 	flagged, err := store.IsFlagged(ctx, "ABC1234")
@@ -49,7 +50,8 @@ func TestStorePersistsDetectionAndWatchlist(t *testing.T) {
 		ID:           "evt_test",
 		CameraID:     "CAM-01",
 		TrackID:      42,
-		Plate:        "ABC1234",
+		PlateText:    "ABC-1234",
+		PlateKey:     "ABC1234",
 		Confidence:   0.93,
 		Flagged:      true,
 		SnapshotURL:  "/evidence/CAM-01/42/vehicle.jpg",
@@ -64,8 +66,11 @@ func TestStorePersistsDetectionAndWatchlist(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}
-	if len(events) != 1 || events[0].Plate != "ABC1234" {
+	if len(events) != 1 {
 		t.Fatalf("List() = %#v", events)
+	}
+	if events[0].PlateText != event.PlateText || events[0].PlateKey != event.PlateKey {
+		t.Fatalf("plate values were not persisted: %#v", events[0])
 	}
 	if events[0].SnapshotURL != event.SnapshotURL || events[0].PlateCropURL != event.PlateCropURL {
 		t.Fatalf("evidence URLs were not persisted: %#v", events[0])
