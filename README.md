@@ -85,7 +85,7 @@ PLATEWATCH_PLATE_MODEL_URL=...
 
 Model binaries are deliberately not committed to Git.
 
-The bundled plate-model URL is intended only to make the prototype runnable. For Philippine motorcycle plates, replace it with a validated/fine-tuned model before treating results as field-quality.
+The bundled plate-model URL is intended only to make the prototype runnable. Replace it only if benchmarking shows insufficient detection quality for your camera, plate layouts, lighting, angle, speed, or distance.
 
 ## Enable live vision
 
@@ -125,7 +125,7 @@ The Compose dependency graph waits for PostgreSQL and Go health before dependent
 Detection history is persisted in PostgreSQL. Important access paths are indexed by:
 
 - detection time
-- normalized plate number + time
+- canonical plate key + time
 - camera + time
 - active watchlist plate
 
