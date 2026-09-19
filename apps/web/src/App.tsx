@@ -89,7 +89,8 @@ export function App() {
                     <div className="vehicleThumb placeholder">No image</div>
                   )}
                   <div>
-                    <span className="plate">{event.plate_text}</span>\n                    <p className="plateKey">Match key: {event.plate_key}</p>
+                    <span className="plate">{event.plate_text}</span>
+                    <p className="plateKey">Match key: {event.plate_key}</p>
                     <p>
                       {event.camera_id} · Track #{event.track_id}
                     </p>
