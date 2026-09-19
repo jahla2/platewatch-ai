@@ -10,9 +10,9 @@ import (
 )
 
 type UpsertWatchlistInput struct {
-	Plate  string `json:"plate"`
-	Reason string `json:"reason"`
-	Active bool   `json:"active"`
+	PlateText string `json:"plate_text"`
+	Reason    string `json:"reason"`
+	Active    bool   `json:"active"`
 }
 
 type WatchlistService struct {
@@ -34,9 +34,10 @@ func (s *WatchlistService) Upsert(
 	ctx context.Context,
 	input UpsertWatchlistInput,
 ) (domain.WatchlistEntry, error) {
-	plate := domain.NormalizePlate(input.Plate)
-	if plate == "" {
-		return domain.WatchlistEntry{}, errors.New("plate is required")
+	plateText := strings.TrimSpace(input.PlateText)
+	plateKey := domain.CanonicalizePlateText(plateText)
+	if plateText == "" || plateKey == "" {
+		return domain.WatchlistEntry{}, errors.New("plate_text is required")
 	}
 
 	reason := strings.TrimSpace(input.Reason)
@@ -45,16 +46,17 @@ func (s *WatchlistService) Upsert(
 	}
 
 	return s.store.UpsertWatchlist(ctx, domain.WatchlistEntry{
-		Plate:  plate,
-		Reason: reason,
-		Active: input.Active,
+		PlateText: plateText,
+		PlateKey:  plateKey,
+		Reason:    reason,
+		Active:    input.Active,
 	})
 }
 
-func (s *WatchlistService) Delete(ctx context.Context, plate string) error {
-	normalized := domain.NormalizePlate(plate)
-	if normalized == "" {
-		return errors.New("plate is required")
+func (s *WatchlistService) Delete(ctx context.Context, plateText string) error {
+	plateKey := domain.CanonicalizePlateText(plateText)
+	if plateKey == "" {
+		return errors.New("plate_text is required")
 	}
-	return s.store.DeleteWatchlist(ctx, normalized)
+	return s.store.DeleteWatchlist(ctx, plateKey)
 }
