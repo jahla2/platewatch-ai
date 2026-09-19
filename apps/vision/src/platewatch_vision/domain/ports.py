@@ -1,15 +1,19 @@
-from typing import Protocol
+from typing import Any, Protocol
 
 from platewatch_vision.domain.models import (
+    BoundingBox,
     FramePacket,
+    OCRResult,
     PlateDecision,
+    PlateDetection,
+    TrackedVehicle,
     VehicleDetection,
 )
 
 
 class FrameSource(Protocol):
     def read(self) -> FramePacket | None:
-        """Return the next frame, or None when the source is exhausted."""
+        """Return the next/current frame, or None when unavailable."""
 
     def close(self) -> None:
         """Release the underlying video/camera resource."""
@@ -18,6 +22,29 @@ class FrameSource(Protocol):
 class VehicleDetector(Protocol):
     def detect(self, frame: FramePacket) -> list[VehicleDetection]:
         """Detect target vehicles in a frame."""
+
+
+class ObjectTracker(Protocol):
+    def update(self, detections: list[VehicleDetection]) -> list[TrackedVehicle]:
+        """Assign stable track IDs to vehicle detections."""
+
+
+class PlateDetector(Protocol):
+    def detect(self, image: Any) -> list[PlateDetection]:
+        """Detect license plates within a vehicle crop."""
+
+
+class OCRRecognizer(Protocol):
+    def recognize(self, image: Any) -> OCRResult | None:
+        """Read normalized candidate text from a license-plate crop."""
+
+
+class ImageProcessor(Protocol):
+    def crop(self, image: Any, box: BoundingBox) -> Any | None:
+        """Crop a bounded region from an image."""
+
+    def quality(self, image: Any) -> float:
+        """Return a normalized 0..1 image quality score."""
 
 
 class FrameAnalysisSink(Protocol):
