@@ -2,11 +2,9 @@ package memory
 
 import (
 	"context"
-	"regexp"
-	"strings"
-)
 
-var nonAlphaNumeric = regexp.MustCompile(`[^A-Z0-9]`)
+	"github.com/jahla2/platewatch-ai/apps/server/internal/domain"
+)
 
 type Watchlist struct {
 	plates map[string]struct{}
@@ -15,7 +13,7 @@ type Watchlist struct {
 func NewWatchlist(values []string) *Watchlist {
 	plates := make(map[string]struct{}, len(values))
 	for _, value := range values {
-		normalized := nonAlphaNumeric.ReplaceAllString(strings.ToUpper(strings.TrimSpace(value)), "")
+		normalized := domain.NormalizePlate(value)
 		if normalized != "" {
 			plates[normalized] = struct{}{}
 		}
