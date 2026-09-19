@@ -20,7 +20,8 @@ class HttpDetectionEventPublisher:
             {
                 "camera_id": decision.camera_id,
                 "track_id": decision.track_id,
-                "plate": decision.plate,
+                "plate_text": decision.plate_text,
+                "plate_key": decision.plate_key,
                 "confidence": decision.confidence,
                 "snapshot_url": decision.snapshot_url,
                 "plate_crop_url": decision.plate_crop_url,
