@@ -43,7 +43,7 @@ The application layer depends on narrow ports:
 - `ImageProcessor`
 - `DetectionEventPublisher`
 
-Concrete OpenCV, Ultralytics, OCR, and HTTP implementations live in infrastructure adapters.
+Concrete OpenCV, Ultralytics, OCR, and HTTP implementations live in infrastructure adapters. OCR preserves raw text; a Unicode-aware canonicalizer produces a separate matching key, so watchlist logic does not depend on a country-specific plate format.
 
 For live feeds, `LatestFrameOpenCVSource` continuously captures frames and overwrites the previous unread frame. Inference therefore operates on the newest available frame rather than accumulating an unbounded RTSP queue.
 
@@ -116,5 +116,5 @@ The V1 architecture is intentionally small. Production expansion should add:
 - evidence/snapshot object storage with retention controls
 - metrics/telemetry and alerting
 - GPU-specific runtime/image profile
-- validated/fine-tuned Philippine plate model
+- benchmark-driven detector/OCR tuning only where measured accuracy requires it
 - multi-camera scheduling and per-camera worker lifecycle

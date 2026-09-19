@@ -38,6 +38,7 @@ class VisionSettings:
     track_iou_threshold: float
     track_max_misses: int
     ocr_engine: str
+    ocr_lang: str
     ocr_min_confidence: float
     ocr_confirmation_count: int
     ocr_interval_frames: int
@@ -64,6 +65,7 @@ class VisionSettings:
             track_iou_threshold=_env_float("PLATEWATCH_TRACK_IOU_THRESHOLD", 0.30),
             track_max_misses=_env_int("PLATEWATCH_TRACK_MAX_MISSES", 8),
             ocr_engine=os.getenv("PLATEWATCH_OCR_ENGINE", "paddleocr").strip().lower(),
+            ocr_lang=os.getenv("PLATEWATCH_OCR_LANG", "en").strip() or "en",
             ocr_min_confidence=_env_float("PLATEWATCH_OCR_MIN_CONFIDENCE", 0.70),
             ocr_confirmation_count=_env_int("PLATEWATCH_OCR_CONFIRMATION_COUNT", 3),
             ocr_interval_frames=_env_int("PLATEWATCH_OCR_INTERVAL_FRAMES", 3),
@@ -93,6 +95,8 @@ class VisionSettings:
             raise ValueError("PLATEWATCH_TRACK_IOU_THRESHOLD must be between 0 and 1")
         if self.track_max_misses < 0:
             raise ValueError("PLATEWATCH_TRACK_MAX_MISSES cannot be negative")
+        if not self.ocr_lang:
+            raise ValueError("PLATEWATCH_OCR_LANG is required")
         if not 0 <= self.ocr_min_confidence <= 1:
             raise ValueError("PLATEWATCH_OCR_MIN_CONFIDENCE must be between 0 and 1")
         if self.ocr_confirmation_count < 1:

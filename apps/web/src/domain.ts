@@ -2,7 +2,8 @@ export type DetectionEvent = {
   id: string;
   camera_id: string;
   track_id: number;
-  plate: string;
+  plate_text: string;
+  plate_key: string;
   confidence: number;
   flagged: boolean;
   snapshot_url: string;

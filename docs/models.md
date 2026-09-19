@@ -1,6 +1,6 @@
 # Model Configuration
 
-PlateWatch keeps model weights outside Git.
+PlateWatch keeps model weights outside Git and treats license plates as country-agnostic visual/text regions.
 
 ## Vehicle detector
 
@@ -18,8 +18,6 @@ PLATEWATCH_VEHICLE_CONFIDENCE=0.35
 
 The default model URL is a generic public license-plate detector so a developer can exercise the full pipeline without first training a model.
 
-It is **not** considered the final Philippine motorcycle plate model.
-
 Environment:
 
 ```env
@@ -28,7 +26,7 @@ PLATEWATCH_PLATE_MODEL=/models/license_plate.pt
 PLATEWATCH_PLATE_CONFIDENCE=0.50
 ```
 
-For field testing, replace this weight file with a model evaluated on a held-out Philippine motorcycle plate dataset including day/night, blur, glare, angle, rain, temporary plates, and different plate generations.
+No country-specific plate format is enforced. Fine-tuning is optional and should only be introduced when a representative benchmark shows that the generic detector is not meeting the required plate-detection recall.
 
 ## OCR
 
@@ -37,13 +35,33 @@ The current OCR adapter uses PaddleOCR and combines repeated observations throug
 Important settings:
 
 ```env
+PLATEWATCH_OCR_ENGINE=paddleocr
+PLATEWATCH_OCR_LANG=en
 PLATEWATCH_OCR_MIN_CONFIDENCE=0.70
 PLATEWATCH_OCR_CONFIRMATION_COUNT=3
 PLATEWATCH_OCR_INTERVAL_FRAMES=3
 PLATEWATCH_PLATE_MIN_QUALITY=0.35
 ```
 
-These values are starting points and should be calibrated against a fixed validation set.
+`PLATEWATCH_OCR_LANG` controls the configured PaddleOCR recognition language. The application itself is format-agnostic, but OCR accuracy for a particular writing system depends on the OCR model/language selected.
+
+## Plate text contract
+
+PlateWatch stores both values:
+
+```text
+plate_text = raw/best OCR representation for display
+plate_key  = Unicode-normalized alphanumeric key for matching
+```
+
+Example:
+
+```text
+plate_text: "B 1234-CD"
+plate_key:  "B1234CD"
+```
+
+The system does not require a country regex such as a fixed number of letters or digits.
 
 ## Licensing
 

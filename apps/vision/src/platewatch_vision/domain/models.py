@@ -49,7 +49,7 @@ class PlateDetection:
 
 @dataclass(frozen=True, slots=True)
 class OCRResult:
-    text: str
+    raw_text: str
     confidence: float
 
 
@@ -86,7 +86,8 @@ class PlateCandidate:
 class PlateDecision:
     track_id: int
     camera_id: str
-    plate: str
+    plate_text: str
+    plate_key: str
     confidence: float
     observations: int
     snapshot_url: str = ""

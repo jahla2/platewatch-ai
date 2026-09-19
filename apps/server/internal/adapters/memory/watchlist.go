@@ -13,15 +13,15 @@ type Watchlist struct {
 func NewWatchlist(values []string) *Watchlist {
 	plates := make(map[string]struct{}, len(values))
 	for _, value := range values {
-		normalized := domain.NormalizePlate(value)
-		if normalized != "" {
-			plates[normalized] = struct{}{}
+		plateKey := domain.CanonicalizePlateText(value)
+		if plateKey != "" {
+			plates[plateKey] = struct{}{}
 		}
 	}
 	return &Watchlist{plates: plates}
 }
 
-func (w *Watchlist) IsFlagged(_ context.Context, plate string) (bool, error) {
-	_, found := w.plates[plate]
+func (w *Watchlist) IsFlagged(_ context.Context, plateKey string) (bool, error) {
+	_, found := w.plates[plateKey]
 	return found, nil
 }

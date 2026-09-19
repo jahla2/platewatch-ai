@@ -61,7 +61,7 @@ def build_vision_worker(
             image_size=settings.image_size,
             device=settings.device,
         ),
-        ocr=PaddleOCRRecognizer(),
+        ocr=PaddleOCRRecognizer(lang=settings.ocr_lang),
         image_processor=OpenCVImageProcessor(),
         plate_processor=plate_processor,
         evidence_store=OpenCVEvidenceStore(

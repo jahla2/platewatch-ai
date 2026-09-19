@@ -80,3 +80,10 @@ h2 { margin-top: 6px; font-size: 1.5rem; }
     width: 100%;
   }
 }
+
+.plateKey {
+  margin-top: 4px;
+  color: #475569;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.68rem;
+}

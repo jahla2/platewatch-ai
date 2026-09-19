@@ -15,8 +15,8 @@ func newWatchlistStoreFake() *watchlistStoreFake {
 	return &watchlistStoreFake{entries: map[string]domain.WatchlistEntry{}}
 }
 
-func (f *watchlistStoreFake) IsFlagged(_ context.Context, plate string) (bool, error) {
-	entry, ok := f.entries[plate]
+func (f *watchlistStoreFake) IsFlagged(_ context.Context, plateKey string) (bool, error) {
+	entry, ok := f.entries[plateKey]
 	return ok && entry.Active, nil
 }
 
@@ -35,28 +35,31 @@ func (f *watchlistStoreFake) UpsertWatchlist(
 	_ context.Context,
 	entry domain.WatchlistEntry,
 ) (domain.WatchlistEntry, error) {
-	f.entries[entry.Plate] = entry
+	f.entries[entry.PlateKey] = entry
 	return entry, nil
 }
 
-func (f *watchlistStoreFake) DeleteWatchlist(_ context.Context, plate string) error {
-	delete(f.entries, plate)
+func (f *watchlistStoreFake) DeleteWatchlist(_ context.Context, plateKey string) error {
+	delete(f.entries, plateKey)
 	return nil
 }
 
-func TestWatchlistServiceNormalizesPlate(t *testing.T) {
+func TestWatchlistServicePreservesTextAndBuildsCanonicalKey(t *testing.T) {
 	store := newWatchlistStoreFake()
 	service := NewWatchlistService(store)
 
 	entry, err := service.Upsert(context.Background(), UpsertWatchlistInput{
-		Plate:  "abc-1234",
-		Reason: "test",
-		Active: true,
+		PlateText: "abc-1234",
+		Reason:    "test",
+		Active:    true,
 	})
 	if err != nil {
 		t.Fatalf("Upsert() error = %v", err)
 	}
-	if entry.Plate != "ABC1234" {
-		t.Fatalf("Plate = %q, want ABC1234", entry.Plate)
+	if entry.PlateText != "abc-1234" {
+		t.Fatalf("PlateText = %q, want abc-1234", entry.PlateText)
+	}
+	if entry.PlateKey != "ABC1234" {
+		t.Fatalf("PlateKey = %q, want ABC1234", entry.PlateKey)
 	}
 }

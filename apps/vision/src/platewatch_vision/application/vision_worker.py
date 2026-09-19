@@ -160,7 +160,7 @@ class VisionWorker:
                         PlateCandidate(
                             track_id=vehicle.track_id,
                             camera_id=self._camera_id,
-                            plate_text=ocr_result.text,
+                            plate_text=ocr_result.raw_text,
                             ocr_confidence=ocr_result.confidence,
                             detection_confidence=plate.confidence,
                             image_quality=quality,

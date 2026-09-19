@@ -22,8 +22,8 @@ func (r *repositoryFake) List(_ context.Context, _ int) ([]domain.DetectionEvent
 
 type watchlistFake struct{}
 
-func (watchlistFake) IsFlagged(_ context.Context, plate string) (bool, error) {
-	return plate == "ABC1234", nil
+func (watchlistFake) IsFlagged(_ context.Context, plateKey string) (bool, error) {
+	return plateKey == "ABC1234", nil
 }
 
 type publisherFake struct {
@@ -35,7 +35,7 @@ func (p *publisherFake) Publish(_ context.Context, event domain.DetectionEvent) 
 	return nil
 }
 
-func TestCreateNormalizesAndFlagsPlate(t *testing.T) {
+func TestCreatePreservesRawTextBuildsKeyAndFlagsPlate(t *testing.T) {
 	repository := &repositoryFake{}
 	publisher := &publisherFake{}
 	service := NewDetectionService(repository, watchlistFake{}, publisher)
@@ -43,7 +43,8 @@ func TestCreateNormalizesAndFlagsPlate(t *testing.T) {
 	event, err := service.Create(context.Background(), CreateDetectionInput{
 		CameraID:     "CAM-01",
 		TrackID:      42,
-		Plate:        "abc-1234",
+		PlateText:    "abc-1234",
+		PlateKey:     "ABC1234",
 		Confidence:   0.94,
 		SnapshotURL:  "/evidence/CAM-01/42/vehicle.jpg",
 		PlateCropURL: "/evidence/CAM-01/42/plate.jpg",
@@ -51,8 +52,11 @@ func TestCreateNormalizesAndFlagsPlate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
-	if event.Plate != "ABC1234" {
-		t.Fatalf("Plate = %q, want ABC1234", event.Plate)
+	if event.PlateText != "abc-1234" {
+		t.Fatalf("PlateText = %q, want abc-1234", event.PlateText)
+	}
+	if event.PlateKey != "ABC1234" {
+		t.Fatalf("PlateKey = %q, want ABC1234", event.PlateKey)
 	}
 	if !event.Flagged {
 		t.Fatal("Flagged = false, want true")
@@ -62,10 +66,25 @@ func TestCreateNormalizesAndFlagsPlate(t *testing.T) {
 	}
 }
 
+func TestCreateRejectsMismatchedCanonicalKey(t *testing.T) {
+	service := NewDetectionService(&repositoryFake{}, watchlistFake{}, &publisherFake{})
+
+	_, err := service.Create(context.Background(), CreateDetectionInput{
+		CameraID:   "CAM-01",
+		TrackID:    1,
+		PlateText:  "ABC-1234",
+		PlateKey:   "WRONG",
+		Confidence: 0.9,
+	})
+	if err == nil {
+		t.Fatal("Create() error = nil, want plate key mismatch error")
+	}
+}
+
 func TestCreateRejectsInvalidConfidence(t *testing.T) {
 	service := NewDetectionService(&repositoryFake{}, watchlistFake{}, &publisherFake{})
 	_, err := service.Create(context.Background(), CreateDetectionInput{
-		CameraID: "CAM-01", TrackID: 1, Plate: "ABC1234", Confidence: 1.5,
+		CameraID: "CAM-01", TrackID: 1, PlateText: "ABC1234", Confidence: 1.5,
 	})
 	if err == nil {
 		t.Fatal("Create() error = nil, want validation error")
@@ -78,7 +97,7 @@ func TestCreateRejectsExternalEvidenceURL(t *testing.T) {
 	_, err := service.Create(context.Background(), CreateDetectionInput{
 		CameraID:    "CAM-01",
 		TrackID:     1,
-		Plate:       "ABC1234",
+		PlateText:   "ABC1234",
 		Confidence:  0.9,
 		SnapshotURL: "https://example.com/image.jpg",
 	})

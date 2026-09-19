@@ -1,13 +1,7 @@
-import re
 from collections import defaultdict
 
 from platewatch_vision.domain.models import PlateCandidate, PlateDecision
-
-_NON_ALPHANUMERIC = re.compile(r"[^A-Z0-9]")
-
-
-def normalize_plate(value: str) -> str:
-    return _NON_ALPHANUMERIC.sub("", value.upper().strip())
+from platewatch_vision.domain.plate_text import canonicalize_plate_text
 
 
 class PlateConsensus:
@@ -25,38 +19,48 @@ class PlateConsensus:
 
         scores: dict[str, float] = defaultdict(float)
         counts: dict[str, int] = defaultdict(int)
+        weighted_candidates: list[tuple[PlateCandidate, str, float]] = []
 
         for candidate in candidates:
-            plate = normalize_plate(candidate.plate_text)
-            if not plate:
+            plate_key = canonicalize_plate_text(candidate.plate_text)
+            if not plate_key:
                 continue
+
             weight = (
                 candidate.ocr_confidence
                 * candidate.detection_confidence
                 * candidate.image_quality
             )
-            scores[plate] += weight
-            counts[plate] += 1
+            scores[plate_key] += weight
+            counts[plate_key] += 1
+            weighted_candidates.append((candidate, plate_key, weight))
 
         if not scores:
             return None
 
-        best_plate = max(scores, key=scores.get)
-        observations = counts[best_plate]
+        best_key = max(scores, key=scores.get)
+        observations = counts[best_key]
         if observations < self._min_observations:
             return None
 
-        confidence = scores[best_plate] / observations
+        confidence = scores[best_key] / observations
         if confidence < self._min_confidence:
             return None
 
-        representative = next(
-            item for item in candidates if normalize_plate(item.plate_text) == best_plate
+        representative, _, _ = max(
+            (
+                item
+                for item in weighted_candidates
+                if item[1] == best_key
+            ),
+            key=lambda item: item[2],
         )
+
         return PlateDecision(
             track_id=representative.track_id,
             camera_id=representative.camera_id,
-            plate=best_plate,
+            plate_text=representative.plate_text.strip(),
+            plate_key=best_key,
             confidence=round(confidence, 4),
             observations=observations,
             snapshot_url=representative.snapshot_url,

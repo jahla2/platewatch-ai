@@ -82,14 +82,15 @@ export function App() {
                     <img
                       className="vehicleThumb"
                       src={event.snapshot_url}
-                      alt={`Vehicle detected as ${event.plate}`}
+                      alt={`Vehicle detected as ${event.plate_text}`}
                       loading="lazy"
                     />
                   ) : (
                     <div className="vehicleThumb placeholder">No image</div>
                   )}
                   <div>
-                    <span className="plate">{event.plate}</span>
+                    <span className="plate">{event.plate_text}</span>
+                    <p className="plateKey">Match key: {event.plate_key}</p>
                     <p>
                       {event.camera_id} · Track #{event.track_id}
                     </p>
@@ -97,7 +98,7 @@ export function App() {
                       <img
                         className="plateThumb"
                         src={event.plate_crop_url}
-                        alt={`Plate crop ${event.plate}`}
+                        alt={`Plate crop ${event.plate_text}`}
                         loading="lazy"
                       />
                     ) : null}
