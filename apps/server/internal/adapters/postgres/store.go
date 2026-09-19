@@ -45,14 +45,15 @@ func (s *Store) Save(ctx context.Context, event domain.DetectionEvent) error {
 	_, err := s.pool.Exec(
 		ctx,
 		`INSERT INTO detection_events
-			(id, camera_id, track_id, plate_number, confidence, flagged,
+			(id, camera_id, track_id, plate_number, plate_text, confidence, flagged,
 			 snapshot_url, plate_crop_url, detected_at)
-		  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		  ON CONFLICT (id) DO NOTHING`,
 		event.ID,
 		event.CameraID,
 		event.TrackID,
-		event.Plate,
+		event.PlateKey,
+		event.PlateText,
 		event.Confidence,
 		event.Flagged,
 		event.SnapshotURL,
@@ -65,7 +66,7 @@ func (s *Store) Save(ctx context.Context, event domain.DetectionEvent) error {
 func (s *Store) List(ctx context.Context, limit int) ([]domain.DetectionEvent, error) {
 	rows, err := s.pool.Query(
 		ctx,
-		`SELECT id, camera_id, track_id, plate_number, confidence, flagged,
+		`SELECT id, camera_id, track_id, plate_text, plate_number, confidence, flagged,
 		          snapshot_url, plate_crop_url, detected_at
 		   FROM detection_events
 		  ORDER BY detected_at DESC
@@ -84,7 +85,8 @@ func (s *Store) List(ctx context.Context, limit int) ([]domain.DetectionEvent, e
 			&event.ID,
 			&event.CameraID,
 			&event.TrackID,
-			&event.Plate,
+			&event.PlateText,
+			&event.PlateKey,
 			&event.Confidence,
 			&event.Flagged,
 			&event.SnapshotURL,
@@ -98,7 +100,7 @@ func (s *Store) List(ctx context.Context, limit int) ([]domain.DetectionEvent, e
 	return events, rows.Err()
 }
 
-func (s *Store) IsFlagged(ctx context.Context, plate string) (bool, error) {
+func (s *Store) IsFlagged(ctx context.Context, plateKey string) (bool, error) {
 	var flagged bool
 	err := s.pool.QueryRow(
 		ctx,
@@ -106,7 +108,7 @@ func (s *Store) IsFlagged(ctx context.Context, plate string) (bool, error) {
 			SELECT 1 FROM watchlist_entries
 			 WHERE plate_number = $1 AND active = TRUE
 		)`,
-		plate,
+		plateKey,
 	).Scan(&flagged)
 	return flagged, err
 }
@@ -117,7 +119,7 @@ func (s *Store) ListWatchlist(
 ) ([]domain.WatchlistEntry, error) {
 	rows, err := s.pool.Query(
 		ctx,
-		`SELECT plate_number, reason, active, created_at, updated_at
+		`SELECT plate_text, plate_number, reason, active, created_at, updated_at
 		   FROM watchlist_entries
 		  ORDER BY updated_at DESC
 		  LIMIT $1`,
@@ -132,7 +134,8 @@ func (s *Store) ListWatchlist(
 	for rows.Next() {
 		var entry domain.WatchlistEntry
 		if err := rows.Scan(
-			&entry.Plate,
+			&entry.PlateText,
+			&entry.PlateKey,
 			&entry.Reason,
 			&entry.Active,
 			&entry.CreatedAt,
@@ -152,18 +155,21 @@ func (s *Store) UpsertWatchlist(
 	var saved domain.WatchlistEntry
 	err := s.pool.QueryRow(
 		ctx,
-		`INSERT INTO watchlist_entries (plate_number, reason, active)
-		  VALUES ($1, $2, $3)
+		`INSERT INTO watchlist_entries (plate_number, plate_text, reason, active)
+		  VALUES ($1, $2, $3, $4)
 		  ON CONFLICT (plate_number) DO UPDATE
-		  SET reason = EXCLUDED.reason,
+		  SET plate_text = EXCLUDED.plate_text,
+		      reason = EXCLUDED.reason,
 		      active = EXCLUDED.active,
 		      updated_at = NOW()
-		  RETURNING plate_number, reason, active, created_at, updated_at`,
-		entry.Plate,
+		  RETURNING plate_text, plate_number, reason, active, created_at, updated_at`,
+		entry.PlateKey,
+		entry.PlateText,
 		entry.Reason,
 		entry.Active,
 	).Scan(
-		&saved.Plate,
+		&saved.PlateText,
+		&saved.PlateKey,
 		&saved.Reason,
 		&saved.Active,
 		&saved.CreatedAt,
@@ -172,11 +178,11 @@ func (s *Store) UpsertWatchlist(
 	return saved, err
 }
 
-func (s *Store) DeleteWatchlist(ctx context.Context, plate string) error {
+func (s *Store) DeleteWatchlist(ctx context.Context, plateKey string) error {
 	command, err := s.pool.Exec(
 		ctx,
 		`DELETE FROM watchlist_entries WHERE plate_number = $1`,
-		plate,
+		plateKey,
 	)
 	if err != nil {
 		return err
