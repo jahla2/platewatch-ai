@@ -1,121 +1,175 @@
 # PlateWatch
 
-Real-time license plate detection, tracking, OCR consensus, watchlist matching, and operator monitoring.
+Real-time motorcycle license-plate detection, tracking, OCR consensus, watchlist matching, persistence, and operator monitoring.
 
-## Architecture
+## Stack
 
-PlateWatch uses a small-service architecture with clear responsibilities:
+- **Python** — live camera/RTSP capture, vehicle detection, tracking, plate detection, OCR, temporal consensus
+- **Go** — application API, PostgreSQL persistence, watchlist logic, realtime SSE, service authentication
+- **React + TypeScript** — operator dashboard
+- **PostgreSQL** — detection history and watchlist
+- **Docker Compose** — local orchestration
 
-- **Python** — camera/video ingestion, computer vision, tracking, plate OCR, and OCR consensus.
-- **Go** — validation, watchlist decisions, persistence boundaries, and realtime event delivery.
-- **React + TypeScript** — operator dashboard.
-- **PostgreSQL** — target persistent store.
-
-The application and domain layers depend on interfaces/protocols rather than concrete HTTP, database, or ML frameworks.
-
-## Repository layout
+## Runtime flow
 
 ```text
-apps/
-  vision/   Python vision service
-  server/   Go application backend
-  web/      React dashboard
-
-docs/
-  PRD.md
-  architecture.md
-
-.github/workflows/
-  ci.yml
+Camera / RTSP / video
+        ↓
+latest-frame capture
+        ↓
+motorcycle detector
+        ↓
+tracker
+        ↓
+license-plate detector
+        ↓
+plate quality filter
+        ↓
+OCR
+        ↓
+temporal consensus
+        ↓
+authenticated internal Go API
+        ↓
+PostgreSQL + watchlist lookup
+        ↓
+SSE
+        ↓
+React dashboard
 ```
 
-## Run the platform locally
+## Quick start
+
+Create local configuration:
 
 ```bash
 cp .env.example .env
+```
+
+Before running, change at minimum:
+
+```env
+PLATEWATCH_INTERNAL_TOKEN=...
+PLATEWATCH_ADMIN_TOKEN=...
+POSTGRES_PASSWORD=...
+DATABASE_URL=postgres://platewatch:<same-password>@postgres:5432/platewatch?sslmode=disable
+```
+
+Start the platform:
+
+```bash
 docker compose up --build
 ```
 
-Open:
+Then open:
 
-- Dashboard: http://localhost:3000
-- Go API: http://localhost:8080/healthz
-- Python vision API: http://localhost:8000/healthz
-
-## Run motorcycle detection
-
-The detector accepts a webcam index, video file, or RTSP URL. Heavy computer-vision dependencies are isolated in the optional `vision` extra so normal API/unit-test development stays lightweight.
-
-```bash
-cd apps/vision
-python -m pip install -e ".[vision,dev]"
+```text
+http://localhost:3000
 ```
 
-Webcam:
+The web container is the public entry point and reverse-proxies `/api/*` and the SSE stream to the Go service. PostgreSQL, Go, and Python remain on the internal Compose network except for the optional loopback PostgreSQL development port.
 
-```bash
-platewatch-detect --source 0 --output ../../artifacts/webcam.mp4
+## Models
+
+Compose bootstraps two model files into the `platewatch_models` volume when missing:
+
+- a small vehicle detector
+- a generic license-plate detector
+
+Model URLs are configurable through:
+
+```env
+PLATEWATCH_VEHICLE_MODEL_URL=...
+PLATEWATCH_PLATE_MODEL_URL=...
 ```
 
-Recorded video:
+Model binaries are deliberately not committed to Git.
 
-```bash
-platewatch-detect \
-  --source ./sample.mp4 \
-  --model yolo11n.pt \
-  --confidence 0.35 \
-  --stride 2 \
-  --output ../../artifacts/detected.mp4
+The bundled plate-model URL is intended only to make the prototype runnable. For Philippine motorcycle plates, replace it with a validated/fine-tuned model before treating results as field-quality.
+
+## Enable live vision
+
+The default is:
+
+```env
+PLATEWATCH_VISION_AUTO_START=false
 ```
 
-RTSP:
+This lets the whole app boot without requiring a camera. To process RTSP:
 
-```bash
-platewatch-detect --source "rtsp://USER:PASSWORD@CAMERA/live"
+```env
+PLATEWATCH_VISION_AUTO_START=true
+PLATEWATCH_CAMERA_ID=GATE-01
+PLATEWATCH_VISION_SOURCE=rtsp://user:password@camera/live
 ```
 
-Do not commit RTSP credentials. Use local environment/configuration when connecting to real cameras.
+Keep camera credentials only in your local `.env`; never commit them.
 
-The command reports processing metrics such as frames read, frames inferred, detections, effective FPS, and average inference latency. With `--output`, detected motorcycles are written to an annotated MP4 with bounding boxes.
+For a directly attached webcam inside Docker, map the camera device to the vision container for your OS/runtime. For initial testing, RTSP is the simplest Docker path.
 
-## End-to-end plate-event development test
+## Health endpoints
 
-Until the plate detector/OCR adapter is connected to the camera pipeline, the Python API also accepts OCR candidates so consensus, Go event flow, watchlist logic, and the dashboard can be tested end to end.
+Internal service health checks:
 
-Send this request three times:
-
-```bash
-curl -X POST http://localhost:8000/v1/tracks/1/plate-candidates \
-  -H "Content-Type: application/json" \
-  -d '{"camera_id":"CAM-01","plate_text":"ABC-1234","ocr_confidence":0.95,"detection_confidence":0.95,"image_quality":0.95}'
+```text
+Go:     /healthz
+Vision: /healthz
+Vision: /readyz
+Vision: /v1/status
 ```
 
-On the third matching candidate, Python confirms the plate and sends it to Go. The default development watchlist includes `ABC1234`, so the dashboard receives a realtime **FLAGGED** event.
+The Compose dependency graph waits for PostgreSQL and Go health before dependent services start.
 
-## Engineering rules
+## Database/query design
 
-- Domain/application layers do not import database or ML frameworks.
-- Camera and detector implementations sit behind narrow Python protocols.
-- Heavy CV dependencies are optional for fast CI and backend/UI development.
-- Slow realtime clients cannot block event ingestion.
-- Secrets, RTSP credentials, private plate datasets, and model artifacts are not committed.
-- Features are delivered through named branches, tests, pull requests, and review.
+Detection history is persisted in PostgreSQL. Important access paths are indexed by:
 
-## Current milestone
+- detection time
+- normalized plate number + time
+- camera + time
+- active watchlist plate
 
-Implemented:
+The current history endpoint is a single ordered query, and watchlist matching is a single indexed `EXISTS` query. There is no ORM/lazy-loading path that produces N+1 queries.
 
-- OpenCV camera/video/RTSP frame source
-- small-model motorcycle detection adapter
-- configurable confidence, image size, device, and inference stride
-- optional annotated MP4 output
-- pipeline FPS and inference-latency metrics
-- plate normalization and temporal OCR consensus
-- Python-to-Go event publishing
-- Go clean application boundary and realtime SSE
-- React detection dashboard
-- Docker Compose and CI
+## Security boundaries
 
-Next: object tracking so each motorcycle receives a stable track ID before license-plate detection and OCR.
+Vision sends confirmed plate events only to:
 
-See [docs/PRD.md](docs/PRD.md) and [docs/architecture.md](docs/architecture.md).
+```text
+POST /internal/v1/detections
+```
+
+using `PLATEWATCH_INTERNAL_TOKEN`.
+
+Watchlist mutation endpoints require `PLATEWATCH_ADMIN_TOKEN`.
+
+The Go server also applies request-size limits, strict JSON decoding, basic security headers, and HTTP timeouts. The current project still needs a real end-user login/session system before internet-facing production deployment.
+
+## Development
+
+Python checks:
+
+```bash
+python -m pip install -e "apps/vision[dev]"
+ruff check apps/vision
+pytest apps/vision/tests
+```
+
+Go checks:
+
+```bash
+cd apps/server
+go mod tidy
+gofmt -w .
+go test ./...
+```
+
+React:
+
+```bash
+cd apps/web
+npm install
+npm run build
+```
+
+See [docs/PRD.md](docs/PRD.md), [docs/architecture.md](docs/architecture.md), and [docs/models.md](docs/models.md).

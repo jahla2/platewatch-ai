@@ -79,3 +79,20 @@ jobs:
         run: npm install
       - name: Build
         run: npm run build
+
+  runtime:
+    name: Runtime configuration
+    runs-on: ubuntu-latest
+    env:
+      PLATEWATCH_INTERNAL_TOKEN: test-internal-token
+      PLATEWATCH_ADMIN_TOKEN: test-admin-token
+      POSTGRES_PASSWORD: test-password
+      DATABASE_URL: postgres://platewatch:test-password@postgres:5432/platewatch?sslmode=disable
+      PLATEWATCH_VEHICLE_MODEL_URL: https://example.invalid/vehicle.pt
+      PLATEWATCH_PLATE_MODEL_URL: https://example.invalid/plate.pt
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Compose
+        run: docker compose config --quiet
+      - name: Build application containers
+        run: docker compose build server web
