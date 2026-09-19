@@ -49,7 +49,7 @@ func TestWatchlistServiceNormalizesPlate(t *testing.T) {
 	service := NewWatchlistService(store)
 
 	entry, err := service.Upsert(context.Background(), UpsertWatchlistInput{
-		Plate: "abc-1234",
+		Plate:  "abc-1234",
 		Reason: "test",
 		Active: true,
 	})
