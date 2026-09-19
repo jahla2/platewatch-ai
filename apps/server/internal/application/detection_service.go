@@ -5,15 +5,12 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
-	"regexp"
 	"strings"
 	"time"
 
 	"github.com/jahla2/platewatch-ai/apps/server/internal/domain"
 	"github.com/jahla2/platewatch-ai/apps/server/internal/ports"
 )
-
-var nonAlphaNumeric = regexp.MustCompile(`[^A-Z0-9]`)
 
 type CreateDetectionInput struct {
 	CameraID   string  `json:"camera_id"`
@@ -48,7 +45,7 @@ func (s *DetectionService) Create(
 	ctx context.Context,
 	input CreateDetectionInput,
 ) (domain.DetectionEvent, error) {
-	plate := normalizePlate(input.Plate)
+	plate := domain.NormalizePlate(input.Plate)
 	if strings.TrimSpace(input.CameraID) == "" {
 		return domain.DetectionEvent{}, errors.New("camera_id is required")
 	}
@@ -97,9 +94,6 @@ func (s *DetectionService) List(ctx context.Context, limit int) ([]domain.Detect
 	return s.repository.List(ctx, limit)
 }
 
-func normalizePlate(value string) string {
-	return nonAlphaNumeric.ReplaceAllString(strings.ToUpper(strings.TrimSpace(value)), "")
-}
 
 func randomID() (string, error) {
 	var bytes [12]byte
