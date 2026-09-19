@@ -22,6 +22,8 @@ class HttpDetectionEventPublisher:
                 "track_id": decision.track_id,
                 "plate": decision.plate,
                 "confidence": decision.confidence,
+                "snapshot_url": decision.snapshot_url,
+                "plate_crop_url": decision.plate_crop_url,
             }
         ).encode("utf-8")
         headers = {"Content-Type": "application/json"}
