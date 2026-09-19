@@ -118,7 +118,7 @@ func (h *Handler) upsertWatchlist(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON payload"})
 		return
 	}
-	input.Plate = r.PathValue("plate")
+	input.PlateText = r.PathValue("plate")
 
 	entry, err := h.watchlistService.Upsert(r.Context(), input)
 	if err != nil {
