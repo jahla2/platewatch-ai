@@ -3,7 +3,8 @@ package domain
 import "time"
 
 type WatchlistEntry struct {
-	Plate     string    `json:"plate"`
+	PlateText string    `json:"plate_text"`
+	PlateKey  string    `json:"plate_key"`
 	Reason    string    `json:"reason"`
 	Active    bool      `json:"active"`
 	CreatedAt time.Time `json:"created_at"`
