@@ -1,12 +1,27 @@
 package domain
 
 import (
-	"regexp"
 	"strings"
+	"unicode"
+
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
+	"golang.org/x/text/unicode/norm"
 )
 
-var nonAlphaNumeric = regexp.MustCompile(`[^A-Z0-9]`)
+var plateUpper = cases.Upper(language.Und)
 
-func NormalizePlate(value string) string {
-	return nonAlphaNumeric.ReplaceAllString(strings.ToUpper(strings.TrimSpace(value)), "")
+func CanonicalizePlateText(value string) string {
+	normalized := plateUpper.String(norm.NFKC.String(strings.TrimSpace(value)))
+
+	var builder strings.Builder
+	builder.Grow(len(normalized))
+
+	for _, character := range normalized {
+		if unicode.IsLetter(character) || unicode.IsNumber(character) {
+			builder.WriteRune(character)
+		}
+	}
+
+	return builder.String()
 }
