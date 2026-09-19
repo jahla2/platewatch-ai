@@ -2,6 +2,7 @@ from typing import Any, Protocol
 
 from platewatch_vision.domain.models import (
     BoundingBox,
+    EvidenceRefs,
     FramePacket,
     OCRResult,
     PlateDecision,
@@ -45,6 +46,17 @@ class ImageProcessor(Protocol):
 
     def quality(self, image: Any) -> float:
         """Return a normalized 0..1 image quality score."""
+
+
+class EvidenceStore(Protocol):
+    def save(
+        self,
+        camera_id: str,
+        track_id: int,
+        snapshot: Any,
+        plate_crop: Any,
+    ) -> EvidenceRefs:
+        """Persist the latest evidence for a track and return browser-safe URLs."""
 
 
 class FrameAnalysisSink(Protocol):

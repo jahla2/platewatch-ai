@@ -44,7 +44,7 @@ export function App() {
           <p className="eyebrow">Realtime vehicle intelligence</p>
           <h1>PlateWatch</h1>
           <p className="subtitle">
-            Confirmed plate detections from the computer-vision pipeline.
+            Confirmed plate detections with evidence from the live vision pipeline.
           </p>
         </div>
         <span className={`status ${status === "Live" ? "statusLive" : ""}`}>
@@ -77,11 +77,31 @@ export function App() {
           <div className="eventList">
             {events.map((event) => (
               <article className="eventCard" key={event.id}>
-                <div>
-                  <span className="plate">{event.plate}</span>
-                  <p>
-                    {event.camera_id} · Track #{event.track_id}
-                  </p>
+                <div className="eventPrimary">
+                  {event.snapshot_url ? (
+                    <img
+                      className="vehicleThumb"
+                      src={event.snapshot_url}
+                      alt={`Vehicle detected as ${event.plate}`}
+                      loading="lazy"
+                    />
+                  ) : (
+                    <div className="vehicleThumb placeholder">No image</div>
+                  )}
+                  <div>
+                    <span className="plate">{event.plate}</span>
+                    <p>
+                      {event.camera_id} · Track #{event.track_id}
+                    </p>
+                    {event.plate_crop_url ? (
+                      <img
+                        className="plateThumb"
+                        src={event.plate_crop_url}
+                        alt={`Plate crop ${event.plate}`}
+                        loading="lazy"
+                      />
+                    ) : null}
+                  </div>
                 </div>
                 <div className="eventMeta">
                   <span className={event.flagged ? "flagged" : "clear"}>

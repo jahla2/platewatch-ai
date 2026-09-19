@@ -59,4 +59,6 @@ class PlateConsensus:
             plate=best_plate,
             confidence=round(confidence, 4),
             observations=observations,
+            snapshot_url=representative.snapshot_url,
+            plate_crop_url=representative.plate_crop_url,
         )

@@ -1,0 +1,3 @@
+ALTER TABLE detection_events
+    ADD COLUMN IF NOT EXISTS snapshot_url TEXT NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS plate_crop_url TEXT NOT NULL DEFAULT '';

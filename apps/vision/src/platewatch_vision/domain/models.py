@@ -54,6 +54,12 @@ class OCRResult:
 
 
 @dataclass(frozen=True, slots=True)
+class EvidenceRefs:
+    snapshot_url: str
+    plate_crop_url: str
+
+
+@dataclass(frozen=True, slots=True)
 class PipelineMetrics:
     frames_read: int
     frames_inferred: int
@@ -72,6 +78,8 @@ class PlateCandidate:
     ocr_confidence: float
     detection_confidence: float
     image_quality: float
+    snapshot_url: str = ""
+    plate_crop_url: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,3 +89,5 @@ class PlateDecision:
     plate: str
     confidence: float
     observations: int
+    snapshot_url: str = ""
+    plate_crop_url: str = ""

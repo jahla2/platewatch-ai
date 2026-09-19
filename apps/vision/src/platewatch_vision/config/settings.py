@@ -42,6 +42,8 @@ class VisionSettings:
     ocr_confirmation_count: int
     ocr_interval_frames: int
     plate_min_quality: float
+    evidence_dir: str
+    evidence_url_prefix: str
 
     @classmethod
     def from_env(cls) -> VisionSettings:
@@ -66,6 +68,8 @@ class VisionSettings:
             ocr_confirmation_count=_env_int("PLATEWATCH_OCR_CONFIRMATION_COUNT", 3),
             ocr_interval_frames=_env_int("PLATEWATCH_OCR_INTERVAL_FRAMES", 3),
             plate_min_quality=_env_float("PLATEWATCH_PLATE_MIN_QUALITY", 0.35),
+            evidence_dir=os.getenv("PLATEWATCH_EVIDENCE_DIR", "/evidence").strip(),
+            evidence_url_prefix=os.getenv("PLATEWATCH_EVIDENCE_URL_PREFIX", "/evidence").strip(),
         )
         settings.validate()
         return settings
@@ -97,3 +101,7 @@ class VisionSettings:
             raise ValueError("PLATEWATCH_OCR_INTERVAL_FRAMES must be positive")
         if not 0 <= self.plate_min_quality <= 1:
             raise ValueError("PLATEWATCH_PLATE_MIN_QUALITY must be between 0 and 1")
+        if not self.evidence_dir:
+            raise ValueError("PLATEWATCH_EVIDENCE_DIR is required")
+        if not self.evidence_url_prefix.startswith("/"):
+            raise ValueError("PLATEWATCH_EVIDENCE_URL_PREFIX must start with /")

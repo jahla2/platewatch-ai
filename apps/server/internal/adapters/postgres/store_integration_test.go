@@ -46,13 +46,15 @@ func TestStorePersistsDetectionAndWatchlist(t *testing.T) {
 	}
 
 	event := domain.DetectionEvent{
-		ID:         "evt_test",
-		CameraID:   "CAM-01",
-		TrackID:    42,
-		Plate:      "ABC1234",
-		Confidence: 0.93,
-		Flagged:    true,
-		DetectedAt: time.Now().UTC(),
+		ID:           "evt_test",
+		CameraID:     "CAM-01",
+		TrackID:      42,
+		Plate:        "ABC1234",
+		Confidence:   0.93,
+		Flagged:      true,
+		SnapshotURL:  "/evidence/CAM-01/42/vehicle.jpg",
+		PlateCropURL: "/evidence/CAM-01/42/plate.jpg",
+		DetectedAt:   time.Now().UTC(),
 	}
 	if err := store.Save(ctx, event); err != nil {
 		t.Fatalf("Save() error = %v", err)
@@ -64,5 +66,8 @@ func TestStorePersistsDetectionAndWatchlist(t *testing.T) {
 	}
 	if len(events) != 1 || events[0].Plate != "ABC1234" {
 		t.Fatalf("List() = %#v", events)
+	}
+	if events[0].SnapshotURL != event.SnapshotURL || events[0].PlateCropURL != event.PlateCropURL {
+		t.Fatalf("evidence URLs were not persisted: %#v", events[0])
 	}
 }

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from platewatch_vision.application.processor import TrackPlateProcessor
 from platewatch_vision.domain.models import PlateCandidate
 from platewatch_vision.domain.ports import (
+    EvidenceStore,
     FrameSource,
     ImageProcessor,
     ObjectTracker,
@@ -38,6 +39,7 @@ class VisionWorker:
         ocr: OCRRecognizer,
         image_processor: ImageProcessor,
         plate_processor: TrackPlateProcessor,
+        evidence_store: EvidenceStore | None = None,
         inference_stride: int = 2,
         ocr_interval_frames: int = 3,
         ocr_min_confidence: float = 0.70,
@@ -56,6 +58,7 @@ class VisionWorker:
         self._ocr = ocr
         self._image_processor = image_processor
         self._plate_processor = plate_processor
+        self._evidence_store = evidence_store
         self._inference_stride = inference_stride
         self._ocr_interval_frames = ocr_interval_frames
         self._ocr_min_confidence = ocr_min_confidence
@@ -141,6 +144,18 @@ class VisionWorker:
                     if ocr_result is None or ocr_result.confidence < self._ocr_min_confidence:
                         continue
 
+                    snapshot_url = ""
+                    plate_crop_url = ""
+                    if self._evidence_store is not None:
+                        refs = self._evidence_store.save(
+                            camera_id=self._camera_id,
+                            track_id=vehicle.track_id,
+                            snapshot=vehicle_crop,
+                            plate_crop=plate_crop,
+                        )
+                        snapshot_url = refs.snapshot_url
+                        plate_crop_url = refs.plate_crop_url
+
                     decision = self._plate_processor.add_candidate(
                         PlateCandidate(
                             track_id=vehicle.track_id,
@@ -149,6 +164,8 @@ class VisionWorker:
                             ocr_confidence=ocr_result.confidence,
                             detection_confidence=plate.confidence,
                             image_quality=quality,
+                            snapshot_url=snapshot_url,
+                            plate_crop_url=plate_crop_url,
                         )
                     )
                     if decision is not None:

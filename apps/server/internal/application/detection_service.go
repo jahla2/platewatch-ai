@@ -13,10 +13,12 @@ import (
 )
 
 type CreateDetectionInput struct {
-	CameraID   string  `json:"camera_id"`
-	TrackID    int64   `json:"track_id"`
-	Plate      string  `json:"plate"`
-	Confidence float64 `json:"confidence"`
+	CameraID     string  `json:"camera_id"`
+	TrackID      int64   `json:"track_id"`
+	Plate        string  `json:"plate"`
+	Confidence   float64 `json:"confidence"`
+	SnapshotURL  string  `json:"snapshot_url"`
+	PlateCropURL string  `json:"plate_crop_url"`
 }
 
 type DetectionService struct {
@@ -46,7 +48,11 @@ func (s *DetectionService) Create(
 	input CreateDetectionInput,
 ) (domain.DetectionEvent, error) {
 	plate := domain.NormalizePlate(input.Plate)
-	if strings.TrimSpace(input.CameraID) == "" {
+	cameraID := strings.TrimSpace(input.CameraID)
+	snapshotURL := strings.TrimSpace(input.SnapshotURL)
+	plateCropURL := strings.TrimSpace(input.PlateCropURL)
+
+	if cameraID == "" {
 		return domain.DetectionEvent{}, errors.New("camera_id is required")
 	}
 	if input.TrackID <= 0 {
@@ -57,6 +63,9 @@ func (s *DetectionService) Create(
 	}
 	if input.Confidence < 0 || input.Confidence > 1 {
 		return domain.DetectionEvent{}, errors.New("confidence must be between 0 and 1")
+	}
+	if !validEvidenceURL(snapshotURL) || !validEvidenceURL(plateCropURL) {
+		return domain.DetectionEvent{}, errors.New("evidence URLs must be empty or start with /evidence/")
 	}
 
 	flagged, err := s.watchlist.IsFlagged(ctx, plate)
@@ -69,13 +78,15 @@ func (s *DetectionService) Create(
 	}
 
 	event := domain.DetectionEvent{
-		ID:         id,
-		CameraID:   strings.TrimSpace(input.CameraID),
-		TrackID:    input.TrackID,
-		Plate:      plate,
-		Confidence: input.Confidence,
-		Flagged:    flagged,
-		DetectedAt: s.now().UTC(),
+		ID:           id,
+		CameraID:     cameraID,
+		TrackID:      input.TrackID,
+		Plate:        plate,
+		Confidence:   input.Confidence,
+		Flagged:      flagged,
+		SnapshotURL:  snapshotURL,
+		PlateCropURL: plateCropURL,
+		DetectedAt:   s.now().UTC(),
 	}
 
 	if err := s.repository.Save(ctx, event); err != nil {
@@ -92,6 +103,10 @@ func (s *DetectionService) List(ctx context.Context, limit int) ([]domain.Detect
 		limit = 50
 	}
 	return s.repository.List(ctx, limit)
+}
+
+func validEvidenceURL(value string) bool {
+	return value == "" || strings.HasPrefix(value, "/evidence/")
 }
 
 func randomID() (string, error) {

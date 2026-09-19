@@ -4,6 +4,7 @@ from platewatch_vision.application.consensus import PlateConsensus
 from platewatch_vision.application.processor import TrackPlateProcessor
 from platewatch_vision.application.vision_worker import VisionWorker
 from platewatch_vision.config.settings import VisionSettings
+from platewatch_vision.infrastructure.evidence_store import OpenCVEvidenceStore
 from platewatch_vision.infrastructure.http_publisher import HttpDetectionEventPublisher
 from platewatch_vision.infrastructure.image_processor import OpenCVImageProcessor
 from platewatch_vision.infrastructure.iou_tracker import IoUTracker
@@ -63,6 +64,10 @@ def build_vision_worker(
         ocr=PaddleOCRRecognizer(),
         image_processor=OpenCVImageProcessor(),
         plate_processor=plate_processor,
+        evidence_store=OpenCVEvidenceStore(
+            root_dir=settings.evidence_dir,
+            url_prefix=settings.evidence_url_prefix,
+        ),
         inference_stride=settings.inference_stride,
         ocr_interval_frames=settings.ocr_interval_frames,
         ocr_min_confidence=settings.ocr_min_confidence,
