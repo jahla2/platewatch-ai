@@ -44,7 +44,7 @@ class VisionSettings:
     plate_min_quality: float
 
     @classmethod
-    def from_env(cls) -> "VisionSettings":
+    def from_env(cls) -> VisionSettings:
         device = os.getenv("PLATEWATCH_VISION_DEVICE", "").strip() or None
         settings = cls(
             server_url=os.getenv("PLATEWATCH_SERVER_URL", "http://localhost:8080").strip(),
