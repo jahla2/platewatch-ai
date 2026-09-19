@@ -95,7 +95,8 @@ def test_worker_runs_full_plate_pipeline() -> None:
         time.sleep(0.01)
     worker.stop()
 
-    assert publisher.events[0].plate_text == "ABC-1234"\n    assert publisher.events[0].plate_key == "ABC1234"
+    assert publisher.events[0].plate_text == "ABC-1234"
+    assert publisher.events[0].plate_key == "ABC1234"
     assert publisher.events[0].track_id == 7
     assert source.closed is True
     assert worker.snapshot().confirmed_plates == 1
