@@ -109,7 +109,8 @@ def add_plate_candidate(track_id: int, request: CandidateRequest) -> dict[str, o
 
     return {
         "status": "confirmed",
-        "plate": decision.plate,
+        "plate_text": decision.plate_text,
+        "plate_key": decision.plate_key,
         "confidence": decision.confidence,
         "observations": decision.observations,
     }
