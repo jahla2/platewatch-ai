@@ -29,7 +29,9 @@ func TestStorePersistsDetectionAndWatchlist(t *testing.T) {
 	}
 
 	entry, err := store.UpsertWatchlist(ctx, domain.WatchlistEntry{
-		Plate: "ABC1234", Reason: "test watchlist", Active: true,
+		Plate:  "ABC1234",
+		Reason: "test watchlist",
+		Active: true,
 	})
 	if err != nil {
 		t.Fatalf("UpsertWatchlist() error = %v", err)
@@ -44,12 +46,12 @@ func TestStorePersistsDetectionAndWatchlist(t *testing.T) {
 	}
 
 	event := domain.DetectionEvent{
-		ID: "evt_test",
-		CameraID: "CAM-01",
-		TrackID: 42,
-		Plate: "ABC1234",
+		ID:         "evt_test",
+		CameraID:   "CAM-01",
+		TrackID:    42,
+		Plate:      "ABC1234",
 		Confidence: 0.93,
-		Flagged: true,
+		Flagged:    true,
 		DetectedAt: time.Now().UTC(),
 	}
 	if err := store.Save(ctx, event); err != nil {
