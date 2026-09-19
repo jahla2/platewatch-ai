@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -32,16 +33,17 @@ class OpenCVEvidenceStore:
         directory = self._root / safe_camera / str(track_id)
         directory.mkdir(parents=True, exist_ok=True)
 
-        snapshot_path = directory / "vehicle.jpg"
-        plate_path = directory / "plate.jpg"
+        evidence_id = uuid.uuid4().hex
+        snapshot_path = directory / f"{evidence_id}-vehicle.jpg"
+        plate_path = directory / f"{evidence_id}-plate.jpg"
 
         self._write_atomic(snapshot_path, snapshot)
         self._write_atomic(plate_path, plate_crop)
 
         base_url = f"{self._url_prefix}/{safe_camera}/{track_id}"
         return EvidenceRefs(
-            snapshot_url=f"{base_url}/vehicle.jpg",
-            plate_crop_url=f"{base_url}/plate.jpg",
+            snapshot_url=f"{base_url}/{snapshot_path.name}",
+            plate_crop_url=f"{base_url}/{plate_path.name}",
         )
 
     def _write_atomic(self, path: Path, image: Any) -> None:
