@@ -14,9 +14,9 @@ class FakeEngine:
         ]
 
 
-def test_ocr_normalizes_plate_text() -> None:
+def test_ocr_preserves_raw_plate_text() -> None:
     result = PaddleOCRRecognizer(engine=FakeEngine()).recognize(object())
 
     assert result is not None
-    assert result.text == "ABC1234"
+    assert result.raw_text == "abc-1234"
     assert result.confidence == 0.91
