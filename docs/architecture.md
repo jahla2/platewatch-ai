@@ -1,98 +1,120 @@
 # PlateWatch Architecture
 
-## Goal
+## System boundary
 
-PlateWatch is split into three application services so each part has one clear responsibility:
-
-- **Vision (Python):** frame processing, detection, tracking, OCR, and OCR consensus.
-- **Server (Go):** validation, watchlist decisions, persistence boundary, and realtime event delivery.
-- **Web (React):** operator dashboard and event visualization.
-
-This keeps computer-vision workloads independent from API and UI concerns.
-
-## V1 data flow
+PlateWatch separates computer-vision processing from application/business logic:
 
 ```text
-Camera / video / RTSP
-        |
-        v
-FrameSource protocol
-        |
-        v
-CameraDetectionPipeline
-        |
-        v
-VehicleDetector protocol
-        |
-        +--> Ultralytics motorcycle adapter
-        |
-        v
-tracking (next milestone)
-        |
-        v
-plate detector + OCR
-        |
-        | POST confirmed plate event
-        v
-Go application service
-        |
-        +--> watchlist lookup
-        +--> repository
-        +--> realtime publisher
-                    |
-                    v
-                  SSE
-                    |
-                    v
-               React UI
+                        ┌──────────────────────┐
+Camera / RTSP ─────────►│ Python Vision       │
+                        │ latest frame buffer  │
+                        │ vehicle detector     │
+                        │ tracker              │
+                        │ plate detector       │
+                        │ OCR + consensus      │
+                        └──────────┬───────────┘
+                                   │
+                          authenticated event
+                                   │
+                                   ▼
+                        ┌──────────────────────┐
+                        │ Go Application API   │
+                        │ validation           │
+                        │ watchlist lookup     │
+                        │ persistence          │
+                        │ realtime publisher   │
+                        └───────┬──────┬───────┘
+                                │      │
+                           PostgreSQL  SSE
+                                       │
+                                       ▼
+                                React dashboard
 ```
 
-The initial Go repository adapter is in memory so the application boundary is executable and testable immediately. PostgreSQL is included in local infrastructure and will replace it through the existing repository interface.
+## Vision design
 
-## Python vision boundaries
-
-The core pipeline knows only these ports:
+The application layer depends on narrow ports:
 
 - `FrameSource`
 - `VehicleDetector`
-- `FrameAnalysisSink`
+- `ObjectTracker`
+- `PlateDetector`
+- `OCRRecognizer`
+- `ImageProcessor`
 - `DetectionEventPublisher`
 
-Concrete camera and model libraries remain in infrastructure adapters.
+Concrete OpenCV, Ultralytics, OCR, and HTTP implementations live in infrastructure adapters.
 
-Current adapters:
+For live feeds, `LatestFrameOpenCVSource` continuously captures frames and overwrites the previous unread frame. Inference therefore operates on the newest available frame rather than accumulating an unbounded RTSP queue.
 
-- `OpenCVFrameSource` — webcam, local video, or RTSP source
-- `UltralyticsMotorcycleDetector` — small configurable detector
-- `OpenCVAnnotatedVideoSink` — optional bounding-box MP4 output
+Tracking currently uses a lightweight IoU tracker suitable for the mini-project and fixed cameras. Because tracking is behind a port, ByteTrack/BoT-SORT can replace it without changing the worker/application orchestration.
 
-Heavy CV dependencies are optional in `pyproject.toml`. This keeps normal unit tests and CI lightweight while the Docker image installs the full vision runtime.
+## Runtime configuration
 
-The detection loop can skip inference using `inference_stride`. For example, stride 2 reads every frame but runs the detector on frames 1, 3, 5, and so on. Tracking will later carry identities across skipped frames.
+Model paths, thresholds, camera source, inference stride, OCR thresholds, and tracker settings are environment-backed through `VisionSettings`.
 
-## Go boundaries
+The Docker runtime mounts model files read-only into the vision service. A one-shot model initializer downloads configured weights only when the volume is empty.
 
-The Go application service depends on interfaces for:
+## Server design
 
-- detection repository
-- watchlist
-- event publisher
+The Go application layer depends on:
 
-Transport and persistence are adapters around the application layer. Domain objects contain no HTTP or database code.
+- `DetectionRepository`
+- `Watchlist`
+- `WatchlistStore`
+- `DetectionPublisher`
+- `DetectionSubscriber`
 
-## React boundary
+PostgreSQL implements persistence ports using `pgxpool`.
 
-The frontend isolates API/event-stream code from rendering. Components receive domain-shaped data instead of knowing transport details.
+The persistence layer uses explicit SQL rather than lazy ORM relations. Detection history is retrieved in one ordered query, and watchlist matching uses an indexed `EXISTS` lookup.
 
-## Why SSE for V1
+## API/security split
 
-Realtime detection delivery is server-to-browser only. Server-Sent Events provide automatic browser reconnection and require no third-party Go dependency. If the product later needs bidirectional realtime commands, the realtime port can be backed by WebSockets without changing the detection application service.
+Public/operator-read paths:
 
-## Remaining V1 adapters
+```text
+GET /api/v1/detections
+GET /api/v1/events/stream
+```
 
-1. object tracker
-2. fine-tuned license-plate detector
-3. OCR adapter
-4. PostgreSQL repository
-5. snapshot/object-storage adapter
-6. low-latency latest-frame RTSP reader for multi-camera deployment
+Internal machine path:
+
+```text
+POST /internal/v1/detections
+Authorization: Bearer <PLATEWATCH_INTERNAL_TOKEN>
+```
+
+Administrative watchlist paths require a separate admin bearer token.
+
+For a public deployment, operator read paths should also be moved behind user/session authentication.
+
+## Web/reverse proxy
+
+Nginx serves the compiled React application and proxies same-origin `/api/*` requests to Go. The SSE route has buffering disabled so detections reach the browser immediately.
+
+This avoids exposing the Go port directly and removes normal browser CORS dependence for the deployed UI.
+
+## Docker dependency graph
+
+```text
+model-init ─────────────► vision
+                           ▲
+postgres ──healthy──► server
+                       │   ▲
+                       │   │
+                       └──► web
+```
+
+The vision service waits for both model initialization and a healthy Go server. The Go server waits for healthy PostgreSQL.
+
+## Remaining production hardening
+
+The V1 architecture is intentionally small. Production expansion should add:
+
+- proper operator identities, sessions, and RBAC
+- evidence/snapshot object storage with retention controls
+- metrics/telemetry and alerting
+- GPU-specific runtime/image profile
+- validated/fine-tuned Philippine plate model
+- multi-camera scheduling and per-camera worker lifecycle
