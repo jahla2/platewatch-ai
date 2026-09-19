@@ -30,6 +30,7 @@ dev = [
 
 [project.scripts]
 platewatch-detect = "platewatch_vision.cli.detect:main"
+platewatch-benchmark-ocr = "platewatch_vision.cli.benchmark_ocr:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
