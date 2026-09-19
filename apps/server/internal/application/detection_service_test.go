@@ -44,7 +44,9 @@ func TestCreateNormalizesAndFlagsPlate(t *testing.T) {
 		CameraID:   "CAM-01",
 		TrackID:    42,
 		Plate:      "abc-1234",
-		Confidence: 0.94,
+		Confidence:   0.94,
+		SnapshotURL:  "/evidence/CAM-01/42/vehicle.jpg",
+		PlateCropURL: "/evidence/CAM-01/42/plate.jpg",
 	})
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
@@ -67,5 +69,20 @@ func TestCreateRejectsInvalidConfidence(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("Create() error = nil, want validation error")
+	}
+}
+
+func TestCreateRejectsExternalEvidenceURL(t *testing.T) {
+	service := NewDetectionService(&repositoryFake{}, watchlistFake{}, &publisherFake{})
+
+	_, err := service.Create(context.Background(), CreateDetectionInput{
+		CameraID:    "CAM-01",
+		TrackID:     1,
+		Plate:       "ABC1234",
+		Confidence:  0.9,
+		SnapshotURL: "https://example.com/image.jpg",
+	})
+	if err == nil {
+		t.Fatal("Create() error = nil, want evidence URL validation error")
 	}
 }
