@@ -15,7 +15,8 @@ import (
 type CreateDetectionInput struct {
 	CameraID     string  `json:"camera_id"`
 	TrackID      int64   `json:"track_id"`
-	Plate        string  `json:"plate"`
+	PlateText    string  `json:"plate_text"`
+	PlateKey     string  `json:"plate_key,omitempty"`
 	Confidence   float64 `json:"confidence"`
 	SnapshotURL  string  `json:"snapshot_url"`
 	PlateCropURL string  `json:"plate_crop_url"`
@@ -47,7 +48,8 @@ func (s *DetectionService) Create(
 	ctx context.Context,
 	input CreateDetectionInput,
 ) (domain.DetectionEvent, error) {
-	plate := domain.NormalizePlate(input.Plate)
+	plateText := strings.TrimSpace(input.PlateText)
+	plateKey := domain.CanonicalizePlateText(plateText)
 	cameraID := strings.TrimSpace(input.CameraID)
 	snapshotURL := strings.TrimSpace(input.SnapshotURL)
 	plateCropURL := strings.TrimSpace(input.PlateCropURL)
@@ -58,8 +60,11 @@ func (s *DetectionService) Create(
 	if input.TrackID <= 0 {
 		return domain.DetectionEvent{}, errors.New("track_id must be positive")
 	}
-	if plate == "" {
-		return domain.DetectionEvent{}, errors.New("plate is required")
+	if plateText == "" || plateKey == "" {
+		return domain.DetectionEvent{}, errors.New("plate_text is required")
+	}
+	if providedKey := strings.TrimSpace(input.PlateKey); providedKey != "" && providedKey != plateKey {
+		return domain.DetectionEvent{}, errors.New("plate_key does not match plate_text")
 	}
 	if input.Confidence < 0 || input.Confidence > 1 {
 		return domain.DetectionEvent{}, errors.New("confidence must be between 0 and 1")
@@ -68,7 +73,7 @@ func (s *DetectionService) Create(
 		return domain.DetectionEvent{}, errors.New("evidence URLs must be empty or start with /evidence/")
 	}
 
-	flagged, err := s.watchlist.IsFlagged(ctx, plate)
+	flagged, err := s.watchlist.IsFlagged(ctx, plateKey)
 	if err != nil {
 		return domain.DetectionEvent{}, err
 	}
@@ -81,7 +86,8 @@ func (s *DetectionService) Create(
 		ID:           id,
 		CameraID:     cameraID,
 		TrackID:      input.TrackID,
-		Plate:        plate,
+		PlateText:    plateText,
+		PlateKey:     plateKey,
 		Confidence:   input.Confidence,
 		Flagged:      flagged,
 		SnapshotURL:  snapshotURL,
