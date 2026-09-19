@@ -94,7 +94,6 @@ func (s *DetectionService) List(ctx context.Context, limit int) ([]domain.Detect
 	return s.repository.List(ctx, limit)
 }
 
-
 func randomID() (string, error) {
 	var bytes [12]byte
 	if _, err := rand.Read(bytes[:]); err != nil {
