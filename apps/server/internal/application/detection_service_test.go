@@ -41,9 +41,9 @@ func TestCreateNormalizesAndFlagsPlate(t *testing.T) {
 	service := NewDetectionService(repository, watchlistFake{}, publisher)
 
 	event, err := service.Create(context.Background(), CreateDetectionInput{
-		CameraID:   "CAM-01",
-		TrackID:    42,
-		Plate:      "abc-1234",
+		CameraID:     "CAM-01",
+		TrackID:      42,
+		Plate:        "abc-1234",
 		Confidence:   0.94,
 		SnapshotURL:  "/evidence/CAM-01/42/vehicle.jpg",
 		PlateCropURL: "/evidence/CAM-01/42/plate.jpg",
