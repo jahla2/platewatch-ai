@@ -12,7 +12,7 @@ Build a near-real-time motorcycle license-plate monitoring prototype that detect
 - plate detection
 - OCR
 - multi-frame OCR consensus
-- normalized plate number and confidence
+- raw plate text, canonical matching key, and confidence
 - watchlist lookup
 - detection-event storage
 - realtime dashboard events
@@ -47,7 +47,7 @@ frame
 
 - do not OCR every frame
 - do not query the watchlist repeatedly for the same finalized track
-- normalize OCR before matching
+- preserve the best raw OCR text and canonicalize only for matching
 - low-confidence detections require human review
 - the vision service must drop stale frames instead of building an unbounded queue
 - secrets, RTSP credentials, and private datasets must never be committed
