@@ -10,21 +10,32 @@ import (
 	"github.com/jahla2/platewatch-ai/apps/server/internal/ports"
 )
 
+const maxRequestBodyBytes = 1 << 20
+
 type Handler struct {
-	service    *application.DetectionService
-	subscriber ports.DetectionSubscriber
-	webOrigin  string
+	detectionService *application.DetectionService
+	watchlistService *application.WatchlistService
+	subscriber       ports.DetectionSubscriber
+	webOrigin        string
+	internalAuth     *BearerAuthorizer
+	adminAuth        *BearerAuthorizer
 }
 
 func NewHandler(
-	service *application.DetectionService,
+	detectionService *application.DetectionService,
+	watchlistService *application.WatchlistService,
 	subscriber ports.DetectionSubscriber,
 	webOrigin string,
+	internalAuth *BearerAuthorizer,
+	adminAuth *BearerAuthorizer,
 ) *Handler {
 	return &Handler{
-		service:    service,
-		subscriber: subscriber,
-		webOrigin:  webOrigin,
+		detectionService: detectionService,
+		watchlistService: watchlistService,
+		subscriber:       subscriber,
+		webOrigin:        webOrigin,
+		internalAuth:     internalAuth,
+		adminAuth:        adminAuth,
 	}
 }
 
@@ -32,9 +43,24 @@ func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", h.health)
 	mux.HandleFunc("GET /api/v1/detections", h.listDetections)
-	mux.HandleFunc("POST /api/v1/detections", h.createDetection)
 	mux.HandleFunc("GET /api/v1/events/stream", h.streamEvents)
-	return h.withCORS(mux)
+	mux.Handle(
+		"POST /internal/v1/detections",
+		h.internalAuth.Middleware(http.HandlerFunc(h.createDetection)),
+	)
+	mux.Handle(
+		"GET /api/v1/watchlist",
+		h.adminAuth.Middleware(http.HandlerFunc(h.listWatchlist)),
+	)
+	mux.Handle(
+		"PUT /api/v1/watchlist/{plate}",
+		h.adminAuth.Middleware(http.HandlerFunc(h.upsertWatchlist)),
+	)
+	mux.Handle(
+		"DELETE /api/v1/watchlist/{plate}",
+		h.adminAuth.Middleware(http.HandlerFunc(h.deleteWatchlist)),
+	)
+	return h.securityHeaders(h.withCORS(mux))
 }
 
 func (h *Handler) health(w http.ResponseWriter, _ *http.Request) {
@@ -43,14 +69,17 @@ func (h *Handler) health(w http.ResponseWriter, _ *http.Request) {
 
 func (h *Handler) createDetection(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
 
 	var input application.CreateDetectionInput
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&input); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON payload"})
 		return
 	}
 
-	event, err := h.service.Create(r.Context(), input)
+	event, err := h.detectionService.Create(r.Context(), input)
 	if err != nil {
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
 		return
@@ -60,12 +89,51 @@ func (h *Handler) createDetection(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) listDetections(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	events, err := h.service.List(r.Context(), limit)
+	events, err := h.detectionService.List(r.Context(), limit)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to list detections"})
 		return
 	}
 	writeJSON(w, http.StatusOK, events)
+}
+
+func (h *Handler) listWatchlist(w http.ResponseWriter, r *http.Request) {
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	entries, err := h.watchlistService.List(r.Context(), limit)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to list watchlist"})
+		return
+	}
+	writeJSON(w, http.StatusOK, entries)
+}
+
+func (h *Handler) upsertWatchlist(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
+
+	var input application.UpsertWatchlistInput
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&input); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON payload"})
+		return
+	}
+	input.Plate = r.PathValue("plate")
+
+	entry, err := h.watchlistService.Upsert(r.Context(), input)
+	if err != nil {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, entry)
+}
+
+func (h *Handler) deleteWatchlist(w http.ResponseWriter, r *http.Request) {
+	if err := h.watchlistService.Delete(r.Context(), r.PathValue("plate")); err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "watchlist entry not found"})
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handler) streamEvents(w http.ResponseWriter, r *http.Request) {
@@ -78,6 +146,7 @@ func (h *Handler) streamEvents(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
 
 	events, unsubscribe := h.subscriber.Subscribe()
 	defer unsubscribe()
@@ -103,12 +172,22 @@ func (h *Handler) streamEvents(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", h.webOrigin)
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
+		w.Header().Set("Vary", "Origin")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (h *Handler) securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("X-Frame-Options", "DENY")
 		next.ServeHTTP(w, r)
 	})
 }
