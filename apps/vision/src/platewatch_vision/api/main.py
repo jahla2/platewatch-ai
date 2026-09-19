@@ -1,19 +1,44 @@
-import os
+from __future__ import annotations
 
-from fastapi import FastAPI, HTTPException
+from contextlib import asynccontextmanager
+from dataclasses import asdict
+
+from fastapi import FastAPI, HTTPException, Response, status
 from pydantic import BaseModel, Field
 
-from platewatch_vision.application.consensus import PlateConsensus
-from platewatch_vision.application.processor import TrackPlateProcessor
-from platewatch_vision.domain.models import PlateCandidate
-from platewatch_vision.infrastructure.http_publisher import HttpDetectionEventPublisher
-
-app = FastAPI(title="PlateWatch Vision", version="0.1.0")
-
-_publisher = HttpDetectionEventPublisher(
-    os.getenv("PLATEWATCH_SERVER_URL", "http://localhost:8080")
+from platewatch_vision.application.bootstrap import (
+    build_plate_processor,
+    build_vision_worker,
 )
-_processor = TrackPlateProcessor(PlateConsensus(), _publisher)
+from platewatch_vision.application.vision_worker import VisionWorker
+from platewatch_vision.config.settings import VisionSettings
+from platewatch_vision.domain.models import PlateCandidate
+
+_settings = VisionSettings.from_env()
+_processor = build_plate_processor(_settings)
+_worker: VisionWorker | None = None
+_startup_error: str | None = None
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    global _worker, _startup_error
+
+    if _settings.auto_start:
+        try:
+            _worker = build_vision_worker(_settings, _processor)
+            _worker.start()
+        except Exception as exc:
+            _startup_error = str(exc)
+
+    try:
+        yield
+    finally:
+        if _worker is not None:
+            _worker.stop()
+
+
+app = FastAPI(title="PlateWatch Vision", version="0.3.0", lifespan=lifespan)
 
 
 class CandidateRequest(BaseModel):
@@ -27,6 +52,40 @@ class CandidateRequest(BaseModel):
 @app.get("/healthz")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/readyz")
+def ready(response: Response) -> dict[str, object]:
+    if not _settings.auto_start:
+        return {"status": "ready", "vision_worker": "disabled"}
+
+    if _startup_error:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        return {"status": "not_ready", "error": _startup_error}
+
+    if _worker is None:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        return {"status": "not_ready", "error": "vision worker has not started"}
+
+    snapshot = _worker.snapshot()
+    if not snapshot.ready:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+
+    return {"status": "ready" if snapshot.ready else "not_ready", **asdict(snapshot)}
+
+
+@app.get("/v1/status")
+def vision_status() -> dict[str, object]:
+    worker = asdict(_worker.snapshot()) if _worker is not None else None
+    return {
+        "camera_id": _settings.camera_id,
+        "auto_start": _settings.auto_start,
+        "source_configured": bool(_settings.source),
+        "vehicle_model": _settings.vehicle_model,
+        "plate_model_configured": bool(_settings.plate_model),
+        "worker": worker,
+        "startup_error": _startup_error,
+    }
 
 
 @app.post("/v1/tracks/{track_id}/plate-candidates")
