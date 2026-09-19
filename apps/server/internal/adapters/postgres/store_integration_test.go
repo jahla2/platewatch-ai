@@ -46,11 +46,11 @@ func TestStorePersistsDetectionAndWatchlist(t *testing.T) {
 	}
 
 	event := domain.DetectionEvent{
-		ID:         "evt_test",
-		CameraID:   "CAM-01",
-		TrackID:    42,
-		Plate:      "ABC1234",
-		Confidence: 0.93,
+		ID:           "evt_test",
+		CameraID:     "CAM-01",
+		TrackID:      42,
+		Plate:        "ABC1234",
+		Confidence:   0.93,
 		Flagged:      true,
 		SnapshotURL:  "/evidence/CAM-01/42/vehicle.jpg",
 		PlateCropURL: "/evidence/CAM-01/42/plate.jpg",
