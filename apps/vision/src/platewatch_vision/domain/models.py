@@ -10,6 +10,14 @@ class BoundingBox:
     x2: float
     y2: float
 
+    @property
+    def width(self) -> float:
+        return max(0.0, self.x2 - self.x1)
+
+    @property
+    def height(self) -> float:
+        return max(0.0, self.y2 - self.y1)
+
 
 @dataclass(frozen=True, slots=True)
 class FramePacket:
@@ -23,6 +31,26 @@ class VehicleDetection:
     label: str
     confidence: float
     box: BoundingBox
+
+
+@dataclass(frozen=True, slots=True)
+class TrackedVehicle:
+    track_id: int
+    label: str
+    confidence: float
+    box: BoundingBox
+
+
+@dataclass(frozen=True, slots=True)
+class PlateDetection:
+    confidence: float
+    box: BoundingBox
+
+
+@dataclass(frozen=True, slots=True)
+class OCRResult:
+    text: str
+    confidence: float
 
 
 @dataclass(frozen=True, slots=True)

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "platewatch-vision"
-version = "0.2.0"
+version = "0.3.0"
 description = "Computer vision service for PlateWatch"
 requires-python = ">=3.12"
 dependencies = [
@@ -17,6 +17,10 @@ dependencies = [
 vision = [
   "opencv-python-headless>=4.10,<5",
   "ultralytics>=8.3,<9",
+]
+ocr = [
+  "paddleocr>=3,<4",
+  "paddlepaddle>=3,<4",
 ]
 dev = [
   "httpx>=0.28,<1",
