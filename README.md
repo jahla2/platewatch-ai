@@ -172,4 +172,4 @@ npm install
 npm run build
 ```
 
-See [docs/PRD.md](docs/PRD.md), [docs/architecture.md](docs/architecture.md), and [docs/models.md](docs/models.md).
+See [docs/PRD.md](docs/PRD.md), [docs/architecture.md](docs/architecture.md), [docs/models.md](docs/models.md), and [docs/benchmark.md](docs/benchmark.md).
