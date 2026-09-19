@@ -66,14 +66,17 @@ func seedWatchlist(
 	value string,
 ) error {
 	for _, plate := range strings.Split(value, ",") {
-		plateText := strings.TrimSpace(plate)\n\t\tplateKey := domain.CanonicalizePlateText(plateText)
+		plateText := strings.TrimSpace(plate)
+		plateKey := domain.CanonicalizePlateText(plateText)
 		if plateText == "" || plateKey == "" {
 			continue
 		}
+
 		_, err := store.UpsertWatchlist(ctx, domain.WatchlistEntry{
-			PlateText: plateText,\n\t\t\tPlateKey:  plateKey,
-			Reason: "development seed",
-			Active: true,
+			PlateText: plateText,
+			PlateKey:  plateKey,
+			Reason:    "development seed",
+			Active:    true,
 		})
 		if err != nil {
 			return err
