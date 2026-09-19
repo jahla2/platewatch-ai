@@ -44,3 +44,39 @@ h2 { margin-top: 6px; font-size: 1.5rem; }
   .hero, .eventCard { flex-direction: column; }
   .eventMeta { width: 100%; justify-content: space-between; }
 }
+
+.eventPrimary {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+.vehicleThumb {
+  width: 104px;
+  height: 72px;
+  border-radius: 10px;
+  border: 1px solid #263449;
+  object-fit: cover;
+  background: #0f172a;
+}
+.vehicleThumb.placeholder {
+  display: grid;
+  place-items: center;
+  color: #64748b;
+  font-size: 0.72rem;
+}
+.plateThumb {
+  display: block;
+  margin-top: 8px;
+  max-width: 120px;
+  max-height: 36px;
+  border-radius: 5px;
+  border: 1px solid #263449;
+  object-fit: contain;
+  background: #020617;
+}
+@media (max-width: 640px) {
+  .eventPrimary {
+    width: 100%;
+  }
+}
