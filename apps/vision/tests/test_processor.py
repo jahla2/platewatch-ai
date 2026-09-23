@@ -1,5 +1,8 @@
+import pytest
+
 from platewatch_vision.application.consensus import PlateConsensus
 from platewatch_vision.application.processor import TrackPlateProcessor
+from platewatch_vision.domain.errors import EventDeliveryError
 from platewatch_vision.domain.models import PlateCandidate, PlateDecision
 
 
@@ -32,16 +35,14 @@ def test_processor_publishes_track_only_once() -> None:
     assert len(publisher.published) == 1
 
 
-def test_processor_keeps_track_retryable_after_delivery_failure() -> None:
-    from platewatch_vision.domain.errors import EventDeliveryError
-
+def test_processor_retries_exact_frozen_decision_after_delivery_failure() -> None:
     class FlakyPublisher:
         def __init__(self) -> None:
-            self.attempts = 0
+            self.attempts: list[PlateDecision] = []
 
-        def publish(self, _decision: PlateDecision) -> None:
-            self.attempts += 1
-            if self.attempts == 1:
+        def publish(self, decision: PlateDecision) -> None:
+            self.attempts.append(decision)
+            if len(self.attempts) == 1:
                 raise EventDeliveryError("temporary")
 
     publisher = FlakyPublisher()
@@ -50,21 +51,33 @@ def test_processor_keeps_track_retryable_after_delivery_failure() -> None:
         publisher,
         max_candidates_per_track=2,
     )
-    sample = PlateCandidate(
+    first = PlateCandidate(
         track_id=2,
         camera_id="CAM-01",
-        plate_text="XYZ987",
+        plate_text="XYZ-987",
         ocr_confidence=0.95,
         detection_confidence=0.95,
         image_quality=0.95,
+        snapshot_url="/evidence/first.jpg",
+    )
+    later = PlateCandidate(
+        track_id=2,
+        camera_id="CAM-01",
+        plate_text="XYZ987",
+        ocr_confidence=0.99,
+        detection_confidence=0.99,
+        image_quality=0.99,
+        snapshot_url="/evidence/later.jpg",
     )
 
-    import pytest
-
     with pytest.raises(EventDeliveryError):
-        processor.add_candidate(sample)
+        processor.add_candidate(first)
 
-    decision = processor.add_candidate(sample)
+    decision = processor.add_candidate(later)
+
     assert decision is not None
-    assert publisher.attempts == 2
-    assert processor.add_candidate(sample) is None
+    assert len(publisher.attempts) == 2
+    assert publisher.attempts[0] == publisher.attempts[1]
+    assert decision.plate_text == "XYZ-987"
+    assert decision.snapshot_url == "/evidence/first.jpg"
+    assert processor.add_candidate(later) is None
