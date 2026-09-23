@@ -105,8 +105,9 @@ func (s *Store) List(
 	limit int,
 	cursor *domain.DetectionCursor,
 ) ([]domain.DetectionEvent, error) {
-	const baseQuery = `SELECT id, idempotency_key, camera_id, track_id, plate_text, plate_number,
-	                           confidence, flagged, snapshot_url, plate_crop_url, detected_at
+	const baseQuery = `SELECT id, COALESCE(idempotency_key, ''), camera_id, track_id,
+	                           plate_text, plate_number, confidence, flagged,
+	                           snapshot_url, plate_crop_url, detected_at
 	                      FROM detection_events`
 
 	var (
