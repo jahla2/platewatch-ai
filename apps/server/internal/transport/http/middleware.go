@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -61,7 +62,7 @@ func (l *RateLimiter) Middleware(next http.Handler) http.Handler {
 			if seconds < 1 {
 				seconds = 1
 			}
-			w.Header().Set("Retry-After", strconvItoa(seconds))
+			w.Header().Set("Retry-After", strconv.Itoa(seconds))
 			writeJSON(w, http.StatusTooManyRequests, map[string]string{
 				"error": "rate limit exceeded",
 			})
@@ -113,6 +114,12 @@ type statusRecorder struct {
 	status int
 }
 
+func (r *statusRecorder) Flush() {
+	if flusher, ok := r.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
 func (r *statusRecorder) WriteHeader(status int) {
 	r.status = status
 	r.ResponseWriter.WriteHeader(status)
@@ -142,16 +149,3 @@ func newRequestID() string {
 	return hex.EncodeToString(value[:])
 }
 
-func strconvItoa(value int) string {
-	if value == 0 {
-		return "0"
-	}
-	var buffer [20]byte
-	index := len(buffer)
-	for value > 0 {
-		index--
-		buffer[index] = byte('0' + value%10)
-		value /= 10
-	}
-	return string(buffer[index:])
-}
