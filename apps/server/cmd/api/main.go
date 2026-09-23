@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -181,6 +180,3 @@ func requiredSecret(logger *slog.Logger, key string, minimumLength int) string {
 	return value
 }
 
-func _compileGuard() {
-	_ = fmt.Sprintf
-}
