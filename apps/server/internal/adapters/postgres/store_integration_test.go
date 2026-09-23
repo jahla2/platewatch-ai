@@ -47,7 +47,8 @@ func TestStorePersistsDetectionAndWatchlist(t *testing.T) {
 	}
 
 	event := domain.DetectionEvent{
-		ID:           "evt_test",
+		ID:             "evt_test",
+		IdempotencyKey: "test-idempotency-key",
 		CameraID:     "CAM-01",
 		TrackID:      42,
 		PlateText:    "ABC-1234",
@@ -58,8 +59,13 @@ func TestStorePersistsDetectionAndWatchlist(t *testing.T) {
 		PlateCropURL: "/evidence/CAM-01/42/plate.jpg",
 		DetectedAt:   time.Now().UTC(),
 	}
-	if err := store.Save(ctx, event); err != nil {
-		t.Fatalf("Save() error = %v", err)
+	created, err := store.SaveIfAbsent(ctx, event)
+	if err != nil || !created {
+		t.Fatalf("SaveIfAbsent() = %v, %v; want true, nil", created, err)
+	}
+	created, err = store.SaveIfAbsent(ctx, event)
+	if err != nil || created {
+		t.Fatalf("duplicate SaveIfAbsent() = %v, %v; want false, nil", created, err)
 	}
 
 	events, err := store.List(ctx, 10)
