@@ -45,7 +45,10 @@ func TestBrokerConcurrentPublishAndSubscribe(t *testing.T) {
 	for _, channel := range channels {
 		for {
 			select {
-			case <-channel:
+			case _, open := <-channel:
+				if !open {
+					goto nextChannel
+				}
 				received++
 			default:
 				goto nextChannel
@@ -58,7 +61,6 @@ func TestBrokerConcurrentPublishAndSubscribe(t *testing.T) {
 		t.Fatal("expected at least one event across subscribers")
 	}
 }
-
 
 func TestBrokerClosesOverloadedSubscriber(t *testing.T) {
 	broker := NewBroker()
