@@ -23,6 +23,9 @@ def build_plate_processor(settings: VisionSettings) -> TrackPlateProcessor:
     publisher = HttpDetectionEventPublisher(
         server_url=settings.server_url,
         internal_token=settings.internal_token,
+        timeout_seconds=settings.publisher_timeout_seconds,
+        max_attempts=settings.publisher_max_attempts,
+        backoff_seconds=settings.publisher_backoff_seconds,
     )
     consensus = PlateConsensus(
         min_observations=settings.ocr_confirmation_count,
