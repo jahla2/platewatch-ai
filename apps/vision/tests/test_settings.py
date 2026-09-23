@@ -6,6 +6,7 @@ from platewatch_vision.config.settings import VisionSettings
 def test_settings_load_runtime_configuration(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PLATEWATCH_VISION_AUTO_START", "true")
     monkeypatch.setenv("PLATEWATCH_VISION_SOURCE", "rtsp://camera/live")
+    monkeypatch.setenv("PLATEWATCH_INTERNAL_TOKEN", "internal-token-1234567890123456")
     monkeypatch.setenv("PLATEWATCH_PLATE_MODEL", "/models/plate.pt")
     monkeypatch.setenv("PLATEWATCH_INFERENCE_STRIDE", "3")
     monkeypatch.setenv("PLATEWATCH_OCR_LANG", "en")
@@ -29,4 +30,14 @@ def test_settings_reject_invalid_threshold(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setenv("PLATEWATCH_VEHICLE_CONFIDENCE", "1.2")
 
     with pytest.raises(ValueError, match="VEHICLE_CONFIDENCE"):
+        VisionSettings.from_env()
+
+
+def test_settings_require_internal_token_when_worker_auto_starts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("PLATEWATCH_VISION_AUTO_START", "true")
+    monkeypatch.delenv("PLATEWATCH_INTERNAL_TOKEN", raising=False)
+
+    with pytest.raises(ValueError, match="INTERNAL_TOKEN"):
         VisionSettings.from_env()
