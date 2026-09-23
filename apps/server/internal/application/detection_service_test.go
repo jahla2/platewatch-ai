@@ -9,11 +9,23 @@ import (
 
 type repositoryFake struct {
 	saved []domain.DetectionEvent
+	keys  map[string]struct{}
 }
 
-func (r *repositoryFake) Save(_ context.Context, event domain.DetectionEvent) error {
+func newRepositoryFake() *repositoryFake {
+	return &repositoryFake{keys: map[string]struct{}{}}
+}
+
+func (r *repositoryFake) SaveIfAbsent(
+	_ context.Context,
+	event domain.DetectionEvent,
+) (bool, error) {
+	if _, exists := r.keys[event.IdempotencyKey]; exists {
+		return false, nil
+	}
+	r.keys[event.IdempotencyKey] = struct{}{}
 	r.saved = append(r.saved, event)
-	return nil
+	return true, nil
 }
 
 func (r *repositoryFake) List(_ context.Context, _ int) ([]domain.DetectionEvent, error) {
@@ -35,22 +47,30 @@ func (p *publisherFake) Publish(_ context.Context, event domain.DetectionEvent) 
 	return nil
 }
 
+func validDetectionInput() CreateDetectionInput {
+	return CreateDetectionInput{
+		IdempotencyKey: "CAM-01:42:ABC1234",
+		CameraID:       "CAM-01",
+		TrackID:        42,
+		PlateText:      "abc-1234",
+		PlateKey:       "ABC1234",
+		Confidence:     0.94,
+		SnapshotURL:    "/evidence/CAM-01/42/vehicle.jpg",
+		PlateCropURL:   "/evidence/CAM-01/42/plate.jpg",
+	}
+}
+
 func TestCreatePreservesRawTextBuildsKeyAndFlagsPlate(t *testing.T) {
-	repository := &repositoryFake{}
+	repository := newRepositoryFake()
 	publisher := &publisherFake{}
 	service := NewDetectionService(repository, watchlistFake{}, publisher)
 
-	event, err := service.Create(context.Background(), CreateDetectionInput{
-		CameraID:     "CAM-01",
-		TrackID:      42,
-		PlateText:    "abc-1234",
-		PlateKey:     "ABC1234",
-		Confidence:   0.94,
-		SnapshotURL:  "/evidence/CAM-01/42/vehicle.jpg",
-		PlateCropURL: "/evidence/CAM-01/42/plate.jpg",
-	})
+	event, created, err := service.Create(context.Background(), validDetectionInput())
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
+	}
+	if !created {
+		t.Fatal("Create() created = false, want true")
 	}
 	if event.PlateText != "abc-1234" {
 		t.Fatalf("PlateText = %q, want abc-1234", event.PlateText)
@@ -66,41 +86,71 @@ func TestCreatePreservesRawTextBuildsKeyAndFlagsPlate(t *testing.T) {
 	}
 }
 
-func TestCreateRejectsMismatchedCanonicalKey(t *testing.T) {
-	service := NewDetectionService(&repositoryFake{}, watchlistFake{}, &publisherFake{})
+func TestCreateIsIdempotentAndDoesNotRepublish(t *testing.T) {
+	repository := newRepositoryFake()
+	publisher := &publisherFake{}
+	service := NewDetectionService(repository, watchlistFake{}, publisher)
+	input := validDetectionInput()
 
-	_, err := service.Create(context.Background(), CreateDetectionInput{
-		CameraID:   "CAM-01",
-		TrackID:    1,
-		PlateText:  "ABC-1234",
-		PlateKey:   "WRONG",
-		Confidence: 0.9,
-	})
+	first, firstCreated, err := service.Create(context.Background(), input)
+	if err != nil || !firstCreated {
+		t.Fatalf("first Create() = %#v, %v, %v", first, firstCreated, err)
+	}
+
+	second, secondCreated, err := service.Create(context.Background(), input)
+	if err != nil {
+		t.Fatalf("second Create() error = %v", err)
+	}
+	if secondCreated {
+		t.Fatal("second Create() created = true, want false")
+	}
+	if first.ID != second.ID {
+		t.Fatalf("duplicate event ID changed: %q != %q", first.ID, second.ID)
+	}
+	if len(repository.saved) != 1 || len(publisher.events) != 1 {
+		t.Fatal("duplicate request persisted or published more than once")
+	}
+}
+
+func TestCreateRejectsMissingIdempotencyKey(t *testing.T) {
+	service := NewDetectionService(newRepositoryFake(), watchlistFake{}, &publisherFake{})
+	input := validDetectionInput()
+	input.IdempotencyKey = ""
+
+	_, _, err := service.Create(context.Background(), input)
+	if err == nil {
+		t.Fatal("Create() error = nil, want idempotency validation error")
+	}
+}
+
+func TestCreateRejectsMismatchedCanonicalKey(t *testing.T) {
+	service := NewDetectionService(newRepositoryFake(), watchlistFake{}, &publisherFake{})
+	input := validDetectionInput()
+	input.PlateKey = "WRONG"
+
+	_, _, err := service.Create(context.Background(), input)
 	if err == nil {
 		t.Fatal("Create() error = nil, want plate key mismatch error")
 	}
 }
 
 func TestCreateRejectsInvalidConfidence(t *testing.T) {
-	service := NewDetectionService(&repositoryFake{}, watchlistFake{}, &publisherFake{})
-	_, err := service.Create(context.Background(), CreateDetectionInput{
-		CameraID: "CAM-01", TrackID: 1, PlateText: "ABC1234", Confidence: 1.5,
-	})
+	service := NewDetectionService(newRepositoryFake(), watchlistFake{}, &publisherFake{})
+	input := validDetectionInput()
+	input.Confidence = 1.5
+
+	_, _, err := service.Create(context.Background(), input)
 	if err == nil {
 		t.Fatal("Create() error = nil, want validation error")
 	}
 }
 
 func TestCreateRejectsExternalEvidenceURL(t *testing.T) {
-	service := NewDetectionService(&repositoryFake{}, watchlistFake{}, &publisherFake{})
+	service := NewDetectionService(newRepositoryFake(), watchlistFake{}, &publisherFake{})
+	input := validDetectionInput()
+	input.SnapshotURL = "https://example.com/image.jpg"
 
-	_, err := service.Create(context.Background(), CreateDetectionInput{
-		CameraID:    "CAM-01",
-		TrackID:     1,
-		PlateText:   "ABC1234",
-		Confidence:  0.9,
-		SnapshotURL: "https://example.com/image.jpg",
-	})
+	_, _, err := service.Create(context.Background(), input)
 	if err == nil {
 		t.Fatal("Create() error = nil, want evidence URL validation error")
 	}
