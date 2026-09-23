@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func TestBearerAuthorizerRejectsInvalidToken(t *testing.T) {
