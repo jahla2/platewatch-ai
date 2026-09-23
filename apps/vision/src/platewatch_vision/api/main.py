@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from dataclasses import asdict
 
 from fastapi import FastAPI, HTTPException, Response, status
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
 from platewatch_vision.application.bootstrap import (
@@ -79,6 +80,30 @@ def ready(response: Response) -> dict[str, object]:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
 
     return {"status": "ready" if snapshot.ready else "not_ready", **asdict(snapshot)}
+
+
+@app.get("/metrics", response_class=PlainTextResponse)
+def metrics() -> PlainTextResponse:
+    snapshot = _worker.snapshot() if _worker is not None else None
+    values = {
+        "platewatch_vision_worker_running": int(bool(snapshot and snapshot.running)),
+        "platewatch_vision_worker_ready": int(
+            not _settings.auto_start or bool(snapshot and snapshot.ready)
+        ),
+        "platewatch_vision_frames_seen_total": snapshot.frames_seen if snapshot else 0,
+        "platewatch_vision_inference_frames_total": (
+            snapshot.inference_frames if snapshot else 0
+        ),
+        "platewatch_vision_ocr_attempts_total": snapshot.ocr_attempts if snapshot else 0,
+        "platewatch_vision_confirmed_plates_total": (
+            snapshot.confirmed_plates if snapshot else 0
+        ),
+        "platewatch_vision_publish_failures_total": (
+            snapshot.publish_failures if snapshot else 0
+        ),
+    }
+    body = "".join(f"{name} {value}\n" for name, value in values.items())
+    return PlainTextResponse(body, media_type="text/plain; version=0.0.4")
 
 
 @app.get("/v1/status")
