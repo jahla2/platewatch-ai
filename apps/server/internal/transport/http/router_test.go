@@ -130,6 +130,7 @@ func TestInternalDetectionRequiresAuthentication(t *testing.T) {
 		"/internal/v1/detections",
 		bytes.NewBufferString(`{"camera_id":"CAM-01","track_id":1,"plate_text":"ABC1234","confidence":0.9}`),
 	)
+	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 
 	handler.Routes().ServeHTTP(response, request)
@@ -151,6 +152,7 @@ func TestInternalDetectionIsIdempotent(t *testing.T) {
 		)
 		request.Header.Set("Authorization", "Bearer internal-secret")
 		request.Header.Set("Idempotency-Key", "same-request")
+		request.Header.Set("Content-Type", "application/json")
 		response := httptest.NewRecorder()
 		handler.Routes().ServeHTTP(response, request)
 		return response
@@ -184,6 +186,7 @@ func TestInternalDetectionRejectsUnknownJSONField(t *testing.T) {
 	)
 	request.Header.Set("Authorization", "Bearer internal-secret")
 	request.Header.Set("Idempotency-Key", "request-1")
+	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 
 	handler.Routes().ServeHTTP(response, request)
@@ -222,6 +225,7 @@ func TestOperatorSessionProtectsDetectionHistory(t *testing.T) {
 		"/api/v1/session",
 		bytes.NewBufferString(`{"token":"operator-secret-token-1234567890"}`),
 	)
+	loginRequest.Header.Set("Content-Type", "application/json")
 	loginResponse := httptest.NewRecorder()
 	handler.Routes().ServeHTTP(loginResponse, loginRequest)
 	if loginResponse.Code != http.StatusNoContent {
