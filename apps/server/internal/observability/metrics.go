@@ -44,10 +44,10 @@ func (m *Metrics) AddSSEConnection(delta int64) {
 }
 
 func (m *Metrics) WritePrometheus(w io.Writer) error {
-	values := []struct {
+	counters := []struct {
 		name  string
 		help  string
-		value any
+		value uint64
 	}{
 		{
 			name:  "platewatch_http_requests_total",
@@ -74,17 +74,12 @@ func (m *Metrics) WritePrometheus(w io.Writer) error {
 			help:  "Total idempotent detection retries served from existing events.",
 			value: m.detectionReplays.Load(),
 		},
-		{
-			name:  "platewatch_sse_connections",
-			help:  "Current Server-Sent Events connections.",
-			value: m.sseConnections.Load(),
-		},
 	}
 
-	for _, metric := range values {
+	for _, metric := range counters {
 		if _, err := fmt.Fprintf(
 			w,
-			"# HELP %s %s\n# TYPE %s gauge\n%s %v\n",
+			"# HELP %s %s\n# TYPE %s counter\n%s %d\n",
 			metric.name,
 			metric.help,
 			metric.name,
@@ -93,6 +88,16 @@ func (m *Metrics) WritePrometheus(w io.Writer) error {
 		); err != nil {
 			return err
 		}
+	}
+
+	if _, err := fmt.Fprintf(
+		w,
+		"# HELP platewatch_sse_connections Current Server-Sent Events connections.\n"+
+			"# TYPE platewatch_sse_connections gauge\n"+
+			"platewatch_sse_connections %d\n",
+		m.sseConnections.Load(),
+	); err != nil {
+		return err
 	}
 	return nil
 }
