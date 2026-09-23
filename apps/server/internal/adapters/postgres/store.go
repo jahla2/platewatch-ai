@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/jahla2/platewatch-ai/apps/server/internal/domain"
+	"github.com/jahla2/platewatch-ai/apps/server/internal/ports"
 )
 
 //go:embed migrations/*.sql
@@ -262,7 +263,7 @@ func (s *Store) DeleteWatchlist(ctx context.Context, plateKey string) error {
 		return fmt.Errorf("delete watchlist: %w", err)
 	}
 	if command.RowsAffected() == 0 {
-		return fmt.Errorf("watchlist plate not found")
+		return ports.ErrNotFound
 	}
 	return nil
 }
