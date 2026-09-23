@@ -211,3 +211,37 @@ func TestStoreHandlesConcurrentDistinctWrites(t *testing.T) {
 		t.Fatalf("row count = %d, want %d", rowCount, workers)
 	}
 }
+
+
+func TestStoreListsLegacyRowsWithoutIdempotencyKey(t *testing.T) {
+	store, ctx := openTestStore(t)
+
+	_, err := store.pool.Exec(
+		ctx,
+		`INSERT INTO detection_events
+			(id, camera_id, track_id, plate_number, plate_text, confidence, flagged, detected_at)
+		  VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+		"evt_legacy",
+		"CAM-LEGACY",
+		int64(1),
+		"LEGACY1",
+		"LEGACY-1",
+		0.8,
+		false,
+		time.Now().UTC(),
+	)
+	if err != nil {
+		t.Fatalf("insert legacy row: %v", err)
+	}
+
+	events, err := store.List(ctx, 10, nil)
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(events) != 1 || events[0].ID != "evt_legacy" {
+		t.Fatalf("events = %#v", events)
+	}
+	if events[0].IdempotencyKey != "" {
+		t.Fatalf("legacy idempotency key = %q, want empty", events[0].IdempotencyKey)
+	}
+}
