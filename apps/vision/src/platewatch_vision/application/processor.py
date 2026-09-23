@@ -10,9 +10,14 @@ class TrackPlateProcessor:
         self,
         consensus: PlateConsensus,
         publisher: DetectionEventPublisher,
+        max_candidates_per_track: int = 12,
     ) -> None:
+        if max_candidates_per_track < 1:
+            raise ValueError("max_candidates_per_track must be positive")
+
         self._consensus = consensus
         self._publisher = publisher
+        self._max_candidates_per_track = max_candidates_per_track
         self._candidates: dict[int, list[PlateCandidate]] = defaultdict(list)
         self._completed_tracks: set[int] = set()
 
@@ -23,11 +28,15 @@ class TrackPlateProcessor:
         self._validate(candidate)
         bucket = self._candidates[candidate.track_id]
         bucket.append(candidate)
+        if len(bucket) > self._max_candidates_per_track:
+            del bucket[: len(bucket) - self._max_candidates_per_track]
 
         decision = self._consensus.decide(bucket)
         if decision is None:
             return None
 
+        # Mark the track completed only after the event has been delivered. A
+        # transient delivery error leaves the candidates available for retry.
         self._publisher.publish(decision)
         self._completed_tracks.add(candidate.track_id)
         self._candidates.pop(candidate.track_id, None)
