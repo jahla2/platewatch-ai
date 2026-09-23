@@ -85,6 +85,11 @@ class VisionSettings:
     def validate(self) -> None:
         if not self.server_url:
             raise ValueError("PLATEWATCH_SERVER_URL is required")
+        if self.auto_start and len(self.internal_token) < 24:
+            raise ValueError(
+                "PLATEWATCH_INTERNAL_TOKEN must be at least 24 characters "
+                "when the vision worker auto-starts"
+            )
         if not self.camera_id:
             raise ValueError("PLATEWATCH_CAMERA_ID is required")
         if not self.source:
