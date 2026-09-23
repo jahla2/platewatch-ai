@@ -104,6 +104,12 @@ func newTestHandler(readinessError error) (*Handler, *routerRepository) {
 		readyFake{err: readinessError},
 		NewBearerAuthorizer("internal-secret"),
 		NewBearerAuthorizer("admin-secret"),
+		NewSessionAuthorizer(
+			"operator-secret-token-1234567890",
+			"session-secret-token-12345678901234567890",
+			false,
+			time.Hour,
+		),
 		logger,
 		metrics,
 		HandlerConfig{
@@ -112,6 +118,7 @@ func newTestHandler(readinessError error) (*Handler, *routerRepository) {
 			PublicRequestsPerMin: 1000,
 			InternalEventsPerMin: 1000,
 			AdminRequestsPerMin:  1000,
+			LoginRequestsPerMin:  1000,
 		},
 	), repository
 }
@@ -195,5 +202,44 @@ func TestReadinessReturns503WhenDatabaseIsUnavailable(t *testing.T) {
 
 	if response.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want %d", response.Code, http.StatusServiceUnavailable)
+	}
+}
+
+func TestOperatorSessionProtectsDetectionHistory(t *testing.T) {
+	handler, _ := newTestHandler(nil)
+
+	unauthorized := httptest.NewRecorder()
+	handler.Routes().ServeHTTP(
+		unauthorized,
+		httptest.NewRequest(http.MethodGet, "/api/v1/detections", nil),
+	)
+	if unauthorized.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthorized status = %d, want %d", unauthorized.Code, http.StatusUnauthorized)
+	}
+
+	loginRequest := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/session",
+		bytes.NewBufferString(`{"token":"operator-secret-token-1234567890"}`),
+	)
+	loginResponse := httptest.NewRecorder()
+	handler.Routes().ServeHTTP(loginResponse, loginRequest)
+	if loginResponse.Code != http.StatusNoContent {
+		t.Fatalf("login status = %d, want %d", loginResponse.Code, http.StatusNoContent)
+	}
+
+	result := loginResponse.Result()
+	cookies := result.Cookies()
+	if len(cookies) == 0 {
+		t.Fatal("login did not set a session cookie")
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/detections", nil)
+	request.AddCookie(cookies[0])
+	response := httptest.NewRecorder()
+	handler.Routes().ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("authorized status = %d, want %d", response.Code, http.StatusOK)
 	}
 }
