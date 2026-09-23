@@ -95,7 +95,10 @@ func (h *Handler) Routes() http.Handler {
 		"GET /readyz",
 		TimeoutMiddleware(h.requestTimeout, http.HandlerFunc(h.ready)),
 	)
-	mux.HandleFunc("GET /metrics", h.metricsHandler)
+	mux.Handle(
+		"GET /metrics",
+		h.adminAuth.Middleware(http.HandlerFunc(h.metricsHandler)),
+	)
 
 	mux.Handle(
 		"POST /api/v1/session",
