@@ -23,6 +23,7 @@ type HandlerConfig struct {
 	PublicRequestsPerMin int
 	InternalEventsPerMin int
 	AdminRequestsPerMin  int
+	LoginRequestsPerMin  int
 }
 
 type Handler struct {
@@ -33,12 +34,14 @@ type Handler struct {
 	webOrigin        string
 	internalAuth     *BearerAuthorizer
 	adminAuth        *BearerAuthorizer
+	operatorAuth     *SessionAuthorizer
 	logger           *slog.Logger
 	metrics          *observability.Metrics
 	requestTimeout   time.Duration
 	publicLimiter    *FixedWindowRateLimiter
 	internalLimiter  *FixedWindowRateLimiter
 	adminLimiter     *FixedWindowRateLimiter
+	loginLimiter     *FixedWindowRateLimiter
 }
 
 func NewHandler(
@@ -48,6 +51,7 @@ func NewHandler(
 	readiness ports.ReadinessChecker,
 	internalAuth *BearerAuthorizer,
 	adminAuth *BearerAuthorizer,
+	operatorAuth *SessionAuthorizer,
 	logger *slog.Logger,
 	metrics *observability.Metrics,
 	config HandlerConfig,
@@ -60,6 +64,7 @@ func NewHandler(
 		webOrigin:        config.WebOrigin,
 		internalAuth:     internalAuth,
 		adminAuth:        adminAuth,
+		operatorAuth:     operatorAuth,
 		logger:           logger,
 		metrics:          metrics,
 		requestTimeout:   config.RequestTimeout,
@@ -75,6 +80,10 @@ func NewHandler(
 			config.AdminRequestsPerMin,
 			time.Minute,
 		),
+		loginLimiter: NewFixedWindowRateLimiter(
+			config.LoginRequestsPerMin,
+			time.Minute,
+		),
 	}
 }
 
@@ -88,11 +97,30 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("GET /metrics", h.metricsHandler)
 
 	mux.Handle(
+		"POST /api/v1/session",
+		RateLimitMiddleware(
+			h.loginLimiter,
+			h.metrics,
+			TimeoutMiddleware(h.requestTimeout, http.HandlerFunc(h.login)),
+		),
+	)
+	mux.Handle(
+		"GET /api/v1/session",
+		h.operatorAuth.Middleware(http.HandlerFunc(h.sessionStatus)),
+	)
+	mux.Handle(
+		"DELETE /api/v1/session",
+		h.operatorAuth.Middleware(http.HandlerFunc(h.logout)),
+	)
+
+	mux.Handle(
 		"GET /api/v1/detections",
 		RateLimitMiddleware(
 			h.publicLimiter,
 			h.metrics,
-			TimeoutMiddleware(h.requestTimeout, http.HandlerFunc(h.listDetections)),
+			h.operatorAuth.Middleware(
+				TimeoutMiddleware(h.requestTimeout, http.HandlerFunc(h.listDetections)),
+			),
 		),
 	)
 	mux.Handle(
@@ -100,7 +128,7 @@ func (h *Handler) Routes() http.Handler {
 		RateLimitMiddleware(
 			h.publicLimiter,
 			h.metrics,
-			http.HandlerFunc(h.streamEvents),
+			h.operatorAuth.Middleware(http.HandlerFunc(h.streamEvents)),
 		),
 	)
 	mux.Handle(
@@ -167,6 +195,37 @@ func (h *Handler) metricsHandler(w http.ResponseWriter, _ *http.Request) {
 	if err := h.metrics.WritePrometheus(w); err != nil {
 		h.logger.Error("metrics_write_failed", "error", err)
 	}
+}
+
+type loginRequest struct {
+	Token string `json:"token"`
+}
+
+func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+	r.Body = http.MaxBytesReader(w, r.Body, 4<<10)
+
+	var input loginRequest
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&input); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON payload"})
+		return
+	}
+	if !h.operatorAuth.Authenticate(w, input.Token) {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) sessionStatus(w http.ResponseWriter, _ *http.Request) {
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) logout(w http.ResponseWriter, _ *http.Request) {
+	h.operatorAuth.Logout(w)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handler) createDetection(w http.ResponseWriter, r *http.Request) {
@@ -339,6 +398,7 @@ func (h *Handler) withCORS(next http.Handler) http.Handler {
 		origin := r.Header.Get("Origin")
 		if origin != "" && origin == h.webOrigin {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
 			w.Header().Set("Vary", "Origin")
 		}
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Idempotency-Key")
