@@ -133,6 +133,11 @@ func (s *DetectionService) Create(
 	if err != nil {
 		return domain.DetectionEvent{}, false, err
 	}
+	if !created && !sameDetectionRequest(saved, candidate) {
+		return domain.DetectionEvent{}, false, NewConflictError(
+			"Idempotency-Key was already used for a different detection",
+		)
+	}
 
 	// Publish both first deliveries and replays. Re-publishing the same event ID lets
 	// clients de-duplicate while recovering from a response lost after persistence.
@@ -180,6 +185,16 @@ func (s *DetectionService) List(
 	}
 	page.NextCursor = nextCursor
 	return page, nil
+}
+
+func sameDetectionRequest(existing domain.DetectionEvent, candidate domain.DetectionEvent) bool {
+	return existing.CameraID == candidate.CameraID &&
+		existing.TrackID == candidate.TrackID &&
+		existing.PlateText == candidate.PlateText &&
+		existing.PlateKey == candidate.PlateKey &&
+		existing.Confidence == candidate.Confidence &&
+		existing.SnapshotURL == candidate.SnapshotURL &&
+		existing.PlateCropURL == candidate.PlateCropURL
 }
 
 func validEvidenceURL(value string) bool {
