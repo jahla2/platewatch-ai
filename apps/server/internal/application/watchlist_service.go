@@ -2,7 +2,6 @@ package application
 
 import (
 	"context"
-	"errors"
 	"strings"
 
 	"github.com/jahla2/platewatch-ai/apps/server/internal/domain"
@@ -37,12 +36,17 @@ func (s *WatchlistService) Upsert(
 	plateText := strings.TrimSpace(input.PlateText)
 	plateKey := domain.CanonicalizePlateText(plateText)
 	if plateText == "" || plateKey == "" {
-		return domain.WatchlistEntry{}, errors.New("plate_text is required")
+		return domain.WatchlistEntry{}, NewValidationError("plate_text is required")
+	}
+	if len(plateText) > 128 || len(plateKey) > 128 {
+		return domain.WatchlistEntry{}, NewValidationError(
+			"plate text must be 128 characters or fewer",
+		)
 	}
 
 	reason := strings.TrimSpace(input.Reason)
 	if len(reason) > 500 {
-		return domain.WatchlistEntry{}, errors.New("reason must be 500 characters or fewer")
+		return domain.WatchlistEntry{}, NewValidationError("reason must be 500 characters or fewer")
 	}
 
 	return s.store.UpsertWatchlist(ctx, domain.WatchlistEntry{
@@ -56,7 +60,7 @@ func (s *WatchlistService) Upsert(
 func (s *WatchlistService) Delete(ctx context.Context, plateText string) error {
 	plateKey := domain.CanonicalizePlateText(plateText)
 	if plateKey == "" {
-		return errors.New("plate_text is required")
+		return NewValidationError("plate_text is required")
 	}
 	return s.store.DeleteWatchlist(ctx, plateKey)
 }

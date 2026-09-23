@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import logging
 import threading
 from dataclasses import dataclass
 
 from platewatch_vision.application.processor import TrackPlateProcessor
+from platewatch_vision.domain.errors import EventDeliveryError
 from platewatch_vision.domain.models import PlateCandidate
 from platewatch_vision.domain.ports import (
     EvidenceStore,
@@ -15,6 +17,8 @@ from platewatch_vision.domain.ports import (
     VehicleDetector,
 )
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass(frozen=True, slots=True)
 class VisionWorkerSnapshot:
@@ -25,6 +29,7 @@ class VisionWorkerSnapshot:
     tracked_vehicles: int
     ocr_attempts: int
     confirmed_plates: int
+    publish_failures: int
     last_error: str | None
 
 
@@ -75,6 +80,7 @@ class VisionWorker:
             tracked_vehicles=0,
             ocr_attempts=0,
             confirmed_plates=0,
+            publish_failures=0,
             last_error=None,
         )
         self._last_ocr_sequence: dict[int, int] = {}
@@ -147,30 +153,60 @@ class VisionWorker:
                     snapshot_url = ""
                     plate_crop_url = ""
                     if self._evidence_store is not None:
-                        refs = self._evidence_store.save(
-                            camera_id=self._camera_id,
-                            track_id=vehicle.track_id,
-                            snapshot=vehicle_crop,
-                            plate_crop=plate_crop,
-                        )
-                        snapshot_url = refs.snapshot_url
-                        plate_crop_url = refs.plate_crop_url
+                        try:
+                            refs = self._evidence_store.save(
+                                camera_id=self._camera_id,
+                                track_id=vehicle.track_id,
+                                snapshot=vehicle_crop,
+                                plate_crop=plate_crop,
+                            )
+                            snapshot_url = refs.snapshot_url
+                            plate_crop_url = refs.plate_crop_url
+                        except (OSError, RuntimeError) as exc:
+                            logger.warning(
+                                "evidence_save_failed",
+                                extra={
+                                    "camera_id": self._camera_id,
+                                    "track_id": vehicle.track_id,
+                                    "error": str(exc),
+                                },
+                            )
+                            self._set(last_error=f"evidence: {exc}")
 
-                    decision = self._plate_processor.add_candidate(
-                        PlateCandidate(
-                            track_id=vehicle.track_id,
-                            camera_id=self._camera_id,
-                            plate_text=ocr_result.raw_text,
-                            ocr_confidence=ocr_result.confidence,
-                            detection_confidence=plate.confidence,
-                            image_quality=quality,
-                            snapshot_url=snapshot_url,
-                            plate_crop_url=plate_crop_url,
+                    try:
+                        decision = self._plate_processor.add_candidate(
+                            PlateCandidate(
+                                track_id=vehicle.track_id,
+                                camera_id=self._camera_id,
+                                plate_text=ocr_result.raw_text,
+                                ocr_confidence=ocr_result.confidence,
+                                detection_confidence=plate.confidence,
+                                image_quality=quality,
+                                snapshot_url=snapshot_url,
+                                plate_crop_url=plate_crop_url,
+                            )
                         )
-                    )
+                    except EventDeliveryError as exc:
+                        logger.warning(
+                            "detection_delivery_failed",
+                            extra={
+                                "camera_id": self._camera_id,
+                                "track_id": vehicle.track_id,
+                                "error": str(exc),
+                            },
+                        )
+                        self._increment(publish_failures=1)
+                        self._set(last_error=f"delivery: {exc}")
+                        continue
+
                     if decision is not None:
                         self._increment(confirmed_plates=1)
+                        self._set(last_error=None)
         except Exception as exc:
+            logger.exception(
+                "vision_worker_failed",
+                extra={"camera_id": self._camera_id},
+            )
             self._set(ready=False, last_error=str(exc))
         finally:
             self._source.close()
@@ -187,6 +223,7 @@ class VisionWorker:
                 "tracked_vehicles": current.tracked_vehicles,
                 "ocr_attempts": current.ocr_attempts,
                 "confirmed_plates": current.confirmed_plates,
+                "publish_failures": current.publish_failures,
                 "last_error": current.last_error,
             }
             for key, value in values.items():
@@ -204,6 +241,7 @@ class VisionWorker:
                 "tracked_vehicles": current.tracked_vehicles,
                 "ocr_attempts": current.ocr_attempts,
                 "confirmed_plates": current.confirmed_plates,
+                "publish_failures": current.publish_failures,
                 "last_error": current.last_error,
             }
             payload.update(values)

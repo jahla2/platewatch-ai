@@ -19,7 +19,12 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install
-        run: python -m pip install -e "apps/vision[dev]"
+        run: |
+          for attempt in 1 2 3; do
+            python -m pip install --retries 5 --timeout 60 -e "apps/vision[dev]" && break
+            if [ "$attempt" -eq 3 ]; then exit 1; fi
+            sleep $((attempt * 5))
+          done
       - name: Lint
         run: ruff check apps/vision
       - name: Test
@@ -52,17 +57,25 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.24.x"
+          cache-dependency-path: apps/server/go.sum
       - name: Verify Go modules
         run: |
           go mod tidy
           git diff --exit-code -- go.mod go.sum
       - name: Format check
         run: |
-          unformatted="$(gofmt -l .)"
-          echo "$unformatted"
-          test -z "$unformatted"
-      - name: Test
-        run: go test ./...
+          gofmt -d . | tee /tmp/gofmt.diff
+          test ! -s /tmp/gofmt.diff
+      - name: Test with race detector
+        run: go test -race -count=1 ./...
+      - name: Verify database backup and restoration
+        env:
+          POSTGRES_DB: platewatch_test
+          POSTGRES_USER: platewatch
+        run: |
+          container_id="$(docker ps --filter ancestor=postgres:17-alpine --format '{{.ID}}' | head -n 1)"
+          test -n "$container_id"
+          bash ../../scripts/verify-db-backup-restore.sh "$container_id"
 
   web:
     name: React web
@@ -84,8 +97,10 @@ jobs:
     name: Runtime configuration
     runs-on: ubuntu-latest
     env:
-      PLATEWATCH_INTERNAL_TOKEN: test-internal-token
-      PLATEWATCH_ADMIN_TOKEN: test-admin-token
+      PLATEWATCH_INTERNAL_TOKEN: test-internal-token-1234567890
+      PLATEWATCH_ADMIN_TOKEN: test-admin-token-123456789012
+      PLATEWATCH_OPERATOR_TOKEN: test-operator-token-long-enough
+      PLATEWATCH_SESSION_SECRET: test-session-secret-at-least-32-characters-long
       POSTGRES_PASSWORD: test-password
       DATABASE_URL: postgres://platewatch:test-password@postgres:5432/platewatch?sslmode=disable
       PLATEWATCH_VEHICLE_MODEL_URL: https://example.invalid/vehicle.pt
@@ -96,3 +111,29 @@ jobs:
         run: docker compose config --quiet
       - name: Build application containers
         run: docker compose build server web
+      - name: End-to-end operator API smoke test
+        run: |
+          set -euo pipefail
+          cleanup() { docker compose down -v >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+
+          docker compose up -d postgres server web
+
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3000/healthz >/dev/null; then
+              break
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              docker compose ps
+              docker compose logs server web postgres
+              exit 1
+            fi
+            sleep 2
+          done
+
+          status="$(
+            curl -sS -o /tmp/login.out -w '%{http_code}'               -c /tmp/platewatch.cookies               -H 'Content-Type: application/json'               -d '{"token":"test-operator-token-long-enough"}'               http://127.0.0.1:3000/api/v1/session
+          )"
+          test "$status" = "204"
+
+          curl -fsS             -b /tmp/platewatch.cookies             'http://127.0.0.1:3000/api/v1/detections?limit=1'             | grep -q '"items"'

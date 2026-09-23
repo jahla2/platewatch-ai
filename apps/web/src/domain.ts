@@ -10,3 +10,8 @@ export type DetectionEvent = {
   plate_crop_url: string;
   detected_at: string;
 };
+
+export type DetectionPage = {
+  items: DetectionEvent[];
+  next_cursor?: string;
+};

@@ -10,10 +10,16 @@ class TrackPlateProcessor:
         self,
         consensus: PlateConsensus,
         publisher: DetectionEventPublisher,
+        max_candidates_per_track: int = 12,
     ) -> None:
+        if max_candidates_per_track < 1:
+            raise ValueError("max_candidates_per_track must be positive")
+
         self._consensus = consensus
         self._publisher = publisher
+        self._max_candidates_per_track = max_candidates_per_track
         self._candidates: dict[int, list[PlateCandidate]] = defaultdict(list)
+        self._pending_decisions: dict[int, PlateDecision] = {}
         self._completed_tracks: set[int] = set()
 
     def add_candidate(self, candidate: PlateCandidate) -> PlateDecision | None:
@@ -21,17 +27,33 @@ class TrackPlateProcessor:
             return None
 
         self._validate(candidate)
+
+        pending = self._pending_decisions.get(candidate.track_id)
+        if pending is not None:
+            self._publish_and_complete(pending)
+            return pending
+
         bucket = self._candidates[candidate.track_id]
         bucket.append(candidate)
+        if len(bucket) > self._max_candidates_per_track:
+            del bucket[: len(bucket) - self._max_candidates_per_track]
 
         decision = self._consensus.decide(bucket)
         if decision is None:
             return None
 
-        self._publisher.publish(decision)
-        self._completed_tracks.add(candidate.track_id)
-        self._candidates.pop(candidate.track_id, None)
+        # Freeze the confirmed payload before the first delivery attempt. If a
+        # response is lost after the server persists it, every later retry must
+        # reuse the identical payload for the same idempotency key.
+        self._pending_decisions[candidate.track_id] = decision
+        self._publish_and_complete(decision)
         return decision
+
+    def _publish_and_complete(self, decision: PlateDecision) -> None:
+        self._publisher.publish(decision)
+        self._pending_decisions.pop(decision.track_id, None)
+        self._completed_tracks.add(decision.track_id)
+        self._candidates.pop(decision.track_id, None)
 
     @staticmethod
     def _validate(candidate: PlateCandidate) -> None:

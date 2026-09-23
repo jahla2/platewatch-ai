@@ -45,6 +45,9 @@ class VisionSettings:
     plate_min_quality: float
     evidence_dir: str
     evidence_url_prefix: str
+    publisher_timeout_seconds: float
+    publisher_max_attempts: int
+    publisher_backoff_seconds: float
 
     @classmethod
     def from_env(cls) -> VisionSettings:
@@ -72,6 +75,9 @@ class VisionSettings:
             plate_min_quality=_env_float("PLATEWATCH_PLATE_MIN_QUALITY", 0.35),
             evidence_dir=os.getenv("PLATEWATCH_EVIDENCE_DIR", "/evidence").strip(),
             evidence_url_prefix=os.getenv("PLATEWATCH_EVIDENCE_URL_PREFIX", "/evidence").strip(),
+            publisher_timeout_seconds=_env_float("PLATEWATCH_PUBLISH_TIMEOUT_SECONDS", 2.0),
+            publisher_max_attempts=_env_int("PLATEWATCH_PUBLISH_MAX_ATTEMPTS", 3),
+            publisher_backoff_seconds=_env_float("PLATEWATCH_PUBLISH_BACKOFF_SECONDS", 0.25),
         )
         settings.validate()
         return settings
@@ -79,6 +85,11 @@ class VisionSettings:
     def validate(self) -> None:
         if not self.server_url:
             raise ValueError("PLATEWATCH_SERVER_URL is required")
+        if self.auto_start and len(self.internal_token) < 24:
+            raise ValueError(
+                "PLATEWATCH_INTERNAL_TOKEN must be at least 24 characters "
+                "when the vision worker auto-starts"
+            )
         if not self.camera_id:
             raise ValueError("PLATEWATCH_CAMERA_ID is required")
         if not self.source:
@@ -109,3 +120,9 @@ class VisionSettings:
             raise ValueError("PLATEWATCH_EVIDENCE_DIR is required")
         if not self.evidence_url_prefix.startswith("/"):
             raise ValueError("PLATEWATCH_EVIDENCE_URL_PREFIX must start with /")
+        if self.publisher_timeout_seconds <= 0:
+            raise ValueError("PLATEWATCH_PUBLISH_TIMEOUT_SECONDS must be positive")
+        if self.publisher_max_attempts < 1 or self.publisher_max_attempts > 10:
+            raise ValueError("PLATEWATCH_PUBLISH_MAX_ATTEMPTS must be between 1 and 10")
+        if self.publisher_backoff_seconds < 0 or self.publisher_backoff_seconds > 30:
+            raise ValueError("PLATEWATCH_PUBLISH_BACKOFF_SECONDS must be between 0 and 30")

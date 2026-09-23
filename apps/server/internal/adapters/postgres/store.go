@@ -7,9 +7,11 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/jahla2/platewatch-ai/apps/server/internal/domain"
+	"github.com/jahla2/platewatch-ai/apps/server/internal/ports"
 )
 
 //go:embed migrations/*.sql
@@ -41,15 +43,29 @@ func (s *Store) Close() {
 	s.pool.Close()
 }
 
-func (s *Store) Save(ctx context.Context, event domain.DetectionEvent) error {
-	_, err := s.pool.Exec(
+func (s *Store) Ping(ctx context.Context) error {
+	return s.pool.Ping(ctx)
+}
+
+func (s *Store) SaveIdempotent(
+	ctx context.Context,
+	idempotencyKey string,
+	event domain.DetectionEvent,
+) (domain.DetectionEvent, bool, error) {
+	event.IdempotencyKey = idempotencyKey
+
+	row := s.pool.QueryRow(
 		ctx,
 		`INSERT INTO detection_events
-			(id, camera_id, track_id, plate_number, plate_text, confidence, flagged,
-			 snapshot_url, plate_crop_url, detected_at)
-		  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-		  ON CONFLICT (id) DO NOTHING`,
+			(id, idempotency_key, camera_id, track_id, plate_number, plate_text, confidence,
+			 flagged, snapshot_url, plate_crop_url, detected_at)
+		  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		  ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL AND idempotency_key <> ''
+		  DO NOTHING
+		  RETURNING id, idempotency_key, camera_id, track_id, plate_text, plate_number,
+		            confidence, flagged, snapshot_url, plate_crop_url, detected_at`,
 		event.ID,
+		idempotencyKey,
 		event.CameraID,
 		event.TrackID,
 		event.PlateKey,
@@ -60,44 +76,95 @@ func (s *Store) Save(ctx context.Context, event domain.DetectionEvent) error {
 		event.PlateCropURL,
 		event.DetectedAt,
 	)
-	return err
+
+	var saved domain.DetectionEvent
+	err := scanDetection(row, &saved)
+	if err == nil {
+		return saved, true, nil
+	}
+	if err != pgx.ErrNoRows {
+		return domain.DetectionEvent{}, false, fmt.Errorf("insert detection: %w", err)
+	}
+
+	row = s.pool.QueryRow(
+		ctx,
+		`SELECT id, idempotency_key, camera_id, track_id, plate_text, plate_number,
+		        confidence, flagged, snapshot_url, plate_crop_url, detected_at
+		   FROM detection_events
+		  WHERE idempotency_key = $1`,
+		idempotencyKey,
+	)
+	if err := scanDetection(row, &saved); err != nil {
+		return domain.DetectionEvent{}, false, fmt.Errorf("load idempotent detection: %w", err)
+	}
+	return saved, false, nil
 }
 
-func (s *Store) List(ctx context.Context, limit int) ([]domain.DetectionEvent, error) {
-	rows, err := s.pool.Query(
-		ctx,
-		`SELECT id, camera_id, track_id, plate_text, plate_number, confidence, flagged,
-		          snapshot_url, plate_crop_url, detected_at
-		   FROM detection_events
-		  ORDER BY detected_at DESC
-		  LIMIT $1`,
-		limit,
+func (s *Store) List(
+	ctx context.Context,
+	limit int,
+	cursor *domain.DetectionCursor,
+) ([]domain.DetectionEvent, error) {
+	const baseQuery = `SELECT id, COALESCE(idempotency_key, ''), camera_id, track_id,
+	                           plate_text, plate_number, confidence, flagged,
+	                           snapshot_url, plate_crop_url, detected_at
+	                      FROM detection_events`
+
+	var (
+		rows pgx.Rows
+		err  error
 	)
+	if cursor == nil {
+		rows, err = s.pool.Query(
+			ctx,
+			baseQuery+` ORDER BY detected_at DESC, id DESC LIMIT $1`,
+			limit,
+		)
+	} else {
+		rows, err = s.pool.Query(
+			ctx,
+			baseQuery+`
+			 WHERE (detected_at, id) < ($1, $2)
+			 ORDER BY detected_at DESC, id DESC
+			 LIMIT $3`,
+			cursor.DetectedAt,
+			cursor.ID,
+			limit,
+		)
+	}
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list detections: %w", err)
 	}
 	defer rows.Close()
 
 	events := make([]domain.DetectionEvent, 0, limit)
 	for rows.Next() {
 		var event domain.DetectionEvent
-		if err := rows.Scan(
-			&event.ID,
-			&event.CameraID,
-			&event.TrackID,
-			&event.PlateText,
-			&event.PlateKey,
-			&event.Confidence,
-			&event.Flagged,
-			&event.SnapshotURL,
-			&event.PlateCropURL,
-			&event.DetectedAt,
-		); err != nil {
-			return nil, err
+		if err := scanDetection(rows, &event); err != nil {
+			return nil, fmt.Errorf("scan detection: %w", err)
 		}
 		events = append(events, event)
 	}
-	return events, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate detections: %w", err)
+	}
+	return events, nil
+}
+
+func scanDetection(row pgx.Row, event *domain.DetectionEvent) error {
+	return row.Scan(
+		&event.ID,
+		&event.IdempotencyKey,
+		&event.CameraID,
+		&event.TrackID,
+		&event.PlateText,
+		&event.PlateKey,
+		&event.Confidence,
+		&event.Flagged,
+		&event.SnapshotURL,
+		&event.PlateCropURL,
+		&event.DetectedAt,
+	)
 }
 
 func (s *Store) IsFlagged(ctx context.Context, plateKey string) (bool, error) {
@@ -110,7 +177,10 @@ func (s *Store) IsFlagged(ctx context.Context, plateKey string) (bool, error) {
 		)`,
 		plateKey,
 	).Scan(&flagged)
-	return flagged, err
+	if err != nil {
+		return false, fmt.Errorf("watchlist lookup: %w", err)
+	}
+	return flagged, nil
 }
 
 func (s *Store) ListWatchlist(
@@ -126,7 +196,7 @@ func (s *Store) ListWatchlist(
 		limit,
 	)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list watchlist: %w", err)
 	}
 	defer rows.Close()
 
@@ -141,11 +211,14 @@ func (s *Store) ListWatchlist(
 			&entry.CreatedAt,
 			&entry.UpdatedAt,
 		); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("scan watchlist: %w", err)
 		}
 		entries = append(entries, entry)
 	}
-	return entries, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate watchlist: %w", err)
+	}
+	return entries, nil
 }
 
 func (s *Store) UpsertWatchlist(
@@ -175,7 +248,10 @@ func (s *Store) UpsertWatchlist(
 		&saved.CreatedAt,
 		&saved.UpdatedAt,
 	)
-	return saved, err
+	if err != nil {
+		return domain.WatchlistEntry{}, fmt.Errorf("upsert watchlist: %w", err)
+	}
+	return saved, nil
 }
 
 func (s *Store) DeleteWatchlist(ctx context.Context, plateKey string) error {
@@ -185,10 +261,10 @@ func (s *Store) DeleteWatchlist(ctx context.Context, plateKey string) error {
 		plateKey,
 	)
 	if err != nil {
-		return err
+		return fmt.Errorf("delete watchlist: %w", err)
 	}
 	if command.RowsAffected() == 0 {
-		return fmt.Errorf("watchlist plate not found")
+		return ports.ErrNotFound
 	}
 	return nil
 }
@@ -212,8 +288,17 @@ func (s *Store) migrate(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("read migration %s: %w", name, err)
 		}
-		if _, err := s.pool.Exec(ctx, string(sql)); err != nil {
+
+		tx, err := s.pool.Begin(ctx)
+		if err != nil {
+			return fmt.Errorf("begin migration %s: %w", name, err)
+		}
+		if _, err := tx.Exec(ctx, string(sql)); err != nil {
+			_ = tx.Rollback(ctx)
 			return fmt.Errorf("apply migration %s: %w", name, err)
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return fmt.Errorf("commit migration %s: %w", name, err)
 		}
 	}
 	return nil
