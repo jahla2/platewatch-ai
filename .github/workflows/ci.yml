@@ -67,7 +67,7 @@ jobs:
           gofmt -d . | tee /tmp/gofmt.diff
           test ! -s /tmp/gofmt.diff
       - name: Test with race detector
-        run: go test -race ./...
+        run: go test -race -count=1 ./...
       - name: Verify database backup and restoration
         env:
           POSTGRES_DB: platewatch_test
