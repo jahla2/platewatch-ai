@@ -97,15 +97,25 @@ func RateLimitMiddleware(
 }
 
 func clientIP(r *http.Request) string {
-	if forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); forwarded != "" {
-		if first, _, found := strings.Cut(forwarded, ","); found {
-			return strings.TrimSpace(first)
+	peerHost, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		peerHost = r.RemoteAddr
+	}
+	peerIP := net.ParseIP(peerHost)
+
+	// Only trust proxy headers when the immediate peer is local/private. The Go
+	// API is normally reached through the internal Nginx container.
+	if peerIP != nil && (peerIP.IsPrivate() || peerIP.IsLoopback()) {
+		if forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); forwarded != "" {
+			first, _, _ := strings.Cut(forwarded, ",")
+			if candidate := strings.TrimSpace(first); net.ParseIP(candidate) != nil {
+				return candidate
+			}
 		}
-		return forwarded
 	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err == nil && host != "" {
-		return host
+
+	if peerHost != "" {
+		return peerHost
 	}
-	return r.RemoteAddr
+	return "unknown"
 }
