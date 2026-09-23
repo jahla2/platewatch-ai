@@ -79,17 +79,56 @@ export function App() {
   useEffect(() => {
     if (authState !== "authenticated") return undefined;
 
+    let needsResync = false;
     void loadInitial();
+
     const unsubscribe = subscribeToDetections(
       (event) => {
         setEvents((current) => mergeUnique([event], current));
       },
       (state) => {
         setStreamStatus(state === "connected" ? "Live" : "Reconnecting");
+
+        if (state === "reconnecting") {
+          needsResync = true;
+          return;
+        }
+        if (needsResync) {
+          needsResync = false;
+          void listDetections()
+            .then((page) => {
+              setEvents((current) => mergeUnique(page.items, current));
+              setNextCursor((current) => current ?? page.next_cursor);
+            })
+            .catch((error) => {
+              const message =
+                error instanceof Error ? error.message : "Failed to resync detections";
+              if (message === "Operator session expired") {
+                setAuthState("unauthenticated");
+                return;
+              }
+              setErrorMessage(message);
+            });
+        }
       },
     );
 
-    return unsubscribe;
+    const sessionTimer = window.setInterval(() => {
+      void hasOperatorSession()
+        .then((authenticated) => {
+          if (!authenticated) {
+            setAuthState("unauthenticated");
+          }
+        })
+        .catch(() => {
+          setStreamStatus("Reconnecting");
+        });
+    }, 60_000);
+
+    return () => {
+      window.clearInterval(sessionTimer);
+      unsubscribe();
+    };
   }, [authState, loadInitial]);
 
   const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
