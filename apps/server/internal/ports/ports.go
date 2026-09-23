@@ -2,9 +2,12 @@ package ports
 
 import (
 	"context"
+	"errors"
 
 	"github.com/jahla2/platewatch-ai/apps/server/internal/domain"
 )
+
+var ErrNotFound = errors.New("not found")
 
 type DetectionRepository interface {
 	SaveIdempotent(
