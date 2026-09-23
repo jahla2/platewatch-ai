@@ -160,3 +160,54 @@ func TestStoreConcurrentIdempotencyCreatesSingleRow(t *testing.T) {
 		t.Fatalf("row count = %d, want 1", rowCount)
 	}
 }
+
+
+func TestStoreHandlesConcurrentDistinctWrites(t *testing.T) {
+	store, ctx := openTestStore(t)
+
+	const workers = 100
+	errorsCh := make(chan error, workers)
+	var wg sync.WaitGroup
+
+	for index := range workers {
+		wg.Add(1)
+		go func(index int) {
+			defer wg.Done()
+			event := domain.DetectionEvent{
+				ID:         fmt.Sprintf("evt_load_%03d", index),
+				CameraID:   fmt.Sprintf("CAM-%02d", index%4),
+				TrackID:    int64(index + 1),
+				PlateText:  fmt.Sprintf("LOAD-%03d", index),
+				PlateKey:   fmt.Sprintf("LOAD%03d", index),
+				Confidence: 0.9,
+				DetectedAt: time.Now().UTC(),
+			}
+			_, created, err := store.SaveIdempotent(
+				ctx,
+				fmt.Sprintf("load-key-%03d", index),
+				event,
+			)
+			if err != nil {
+				errorsCh <- err
+				return
+			}
+			if !created {
+				errorsCh <- fmt.Errorf("write %d unexpectedly replayed", index)
+			}
+		}(index)
+	}
+
+	wg.Wait()
+	close(errorsCh)
+	for err := range errorsCh {
+		t.Errorf("concurrent distinct write error = %v", err)
+	}
+
+	var rowCount int
+	if err := store.pool.QueryRow(ctx, "SELECT COUNT(*) FROM detection_events").Scan(&rowCount); err != nil {
+		t.Fatalf("count rows: %v", err)
+	}
+	if rowCount != workers {
+		t.Fatalf("row count = %d, want %d", rowCount, workers)
+	}
+}
