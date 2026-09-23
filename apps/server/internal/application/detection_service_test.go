@@ -238,7 +238,6 @@ func TestListReturnsKeysetCursor(t *testing.T) {
 	}
 }
 
-
 func TestCreateRejectsIdempotencyKeyReuseWithDifferentPayload(t *testing.T) {
 	repository := newRepositoryFake()
 	service := NewDetectionService(repository, watchlistFake{}, &publisherFake{})
