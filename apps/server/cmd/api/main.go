@@ -203,4 +203,3 @@ func requiredSecret(logger *slog.Logger, key string, minimumLength int) string {
 	}
 	return value
 }
-
