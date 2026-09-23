@@ -51,6 +51,8 @@ Before running, change at minimum:
 ```env
 PLATEWATCH_INTERNAL_TOKEN=...
 PLATEWATCH_ADMIN_TOKEN=...
+PLATEWATCH_OPERATOR_TOKEN=...
+PLATEWATCH_SESSION_SECRET=...
 POSTGRES_PASSWORD=...
 DATABASE_URL=postgres://platewatch:<same-password>@postgres:5432/platewatch?sslmode=disable
 ```
@@ -113,6 +115,8 @@ Internal service health checks:
 
 ```text
 Go:     /healthz
+Go:     /readyz
+Go:     /metrics
 Vision: /healthz
 Vision: /readyz
 Vision: /v1/status
@@ -129,7 +133,7 @@ Detection history is persisted in PostgreSQL. Important access paths are indexed
 - camera + time
 - active watchlist plate
 
-The current history endpoint is a single ordered query, and watchlist matching is a single indexed `EXISTS` query. There is no ORM/lazy-loading path that produces N+1 queries.
+Detection history uses indexed keyset pagination rather than growing OFFSET scans, and watchlist matching is a single indexed `EXISTS` query. There is no ORM/lazy-loading path that produces N+1 queries.
 
 ## Security boundaries
 
@@ -143,7 +147,7 @@ using `PLATEWATCH_INTERNAL_TOKEN`.
 
 Watchlist mutation endpoints require `PLATEWATCH_ADMIN_TOKEN`.
 
-The Go server also applies request-size limits, strict JSON decoding, basic security headers, and HTTP timeouts. The current project still needs a real end-user login/session system before internet-facing production deployment.
+The Go server also applies request-size limits, strict JSON decoding, rate limits, idempotency, structured request logging, HTTP timeouts, and operator HttpOnly sessions. The current session model is intended for a single self-hosted operator; multi-user internet deployment should use a real identity provider/RBAC.
 
 ## Development
 
@@ -172,4 +176,4 @@ npm install
 npm run build
 ```
 
-See [docs/PRD.md](docs/PRD.md), [docs/architecture.md](docs/architecture.md), [docs/models.md](docs/models.md), and [docs/benchmark.md](docs/benchmark.md).
+See [docs/PRD.md](docs/PRD.md), [docs/architecture.md](docs/architecture.md), [docs/models.md](docs/models.md), [docs/benchmark.md](docs/benchmark.md), and [docs/production-hardening.md](docs/production-hardening.md).
