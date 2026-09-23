@@ -4,6 +4,8 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 const REQUEST_TIMEOUT_MS = 5_000;
 const GET_MAX_ATTEMPTS = 2;
 
+class NonRetryableRequestError extends Error {}
+
 function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 }
@@ -45,13 +47,18 @@ async function fetchDetectionPage(url: string): Promise<DetectionPage> {
       }
 
       if (response.status === 401) {
-        throw new Error("Operator session expired");
+        throw new NonRetryableRequestError("Operator session expired");
       }
-      if (response.status < 500 || attempt === GET_MAX_ATTEMPTS) {
-        throw new Error(`Failed to load detections (HTTP ${response.status})`);
+      if (response.status < 500 && response.status !== 408 && response.status !== 429) {
+        throw new NonRetryableRequestError(
+          `Failed to load detections (HTTP ${response.status})`,
+        );
       }
       lastError = new Error(`Temporary API error (HTTP ${response.status})`);
     } catch (error) {
+      if (error instanceof NonRetryableRequestError) {
+        throw error;
+      }
       lastError = error;
       if (attempt === GET_MAX_ATTEMPTS) {
         break;
