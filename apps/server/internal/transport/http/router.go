@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"mime"
 	"net/http"
 	"strconv"
 	"time"
@@ -206,6 +207,10 @@ type loginRequest struct {
 }
 
 func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
+	if !isJSONContentType(r.Header.Get("Content-Type")) {
+		writeJSON(w, http.StatusUnsupportedMediaType, map[string]string{"error": "Content-Type must be application/json"})
+		return
+	}
 	defer r.Body.Close()
 	r.Body = http.MaxBytesReader(w, r.Body, 4<<10)
 
@@ -231,6 +236,10 @@ func (h *Handler) logout(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (h *Handler) createDetection(w http.ResponseWriter, r *http.Request) {
+	if !isJSONContentType(r.Header.Get("Content-Type")) {
+		writeJSON(w, http.StatusUnsupportedMediaType, map[string]string{"error": "Content-Type must be application/json"})
+		return
+	}
 	defer r.Body.Close()
 	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
 
@@ -296,6 +305,10 @@ func (h *Handler) listWatchlist(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) upsertWatchlist(w http.ResponseWriter, r *http.Request) {
+	if !isJSONContentType(r.Header.Get("Content-Type")) {
+		writeJSON(w, http.StatusUnsupportedMediaType, map[string]string{"error": "Content-Type must be application/json"})
+		return
+	}
 	defer r.Body.Close()
 	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
 
@@ -434,6 +447,11 @@ func parseLimit(value string, fallback int, maximum int) (int, error) {
 		return 0, fmt.Errorf("limit must be between 1 and %d", maximum)
 	}
 	return limit, nil
+}
+
+func isJSONContentType(value string) bool {
+	mediaType, _, err := mime.ParseMediaType(value)
+	return err == nil && mediaType == "application/json"
 }
 
 func decodeStrictJSON(reader io.Reader, destination any) error {
