@@ -7,8 +7,20 @@ import (
 )
 
 type DetectionRepository interface {
-	Save(ctx context.Context, event domain.DetectionEvent) error
-	List(ctx context.Context, limit int) ([]domain.DetectionEvent, error)
+	SaveIdempotent(
+		ctx context.Context,
+		idempotencyKey string,
+		event domain.DetectionEvent,
+	) (saved domain.DetectionEvent, created bool, err error)
+	List(
+		ctx context.Context,
+		limit int,
+		cursor *domain.DetectionCursor,
+	) ([]domain.DetectionEvent, error)
+}
+
+type ReadinessChecker interface {
+	Ping(ctx context.Context) error
 }
 
 type Watchlist interface {
