@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -234,5 +235,44 @@ func TestListReturnsKeysetCursor(t *testing.T) {
 	}
 	if len(next.Items) != 1 || next.Items[0].ID != "evt_1" {
 		t.Fatalf("next page = %#v", next)
+	}
+}
+
+
+func TestCreateRejectsIdempotencyKeyReuseWithDifferentPayload(t *testing.T) {
+	repository := newRepositoryFake()
+	service := NewDetectionService(repository, watchlistFake{}, &publisherFake{})
+
+	_, created, err := service.Create(
+		context.Background(),
+		CreateDetectionInput{
+			CameraID:   "CAM-01",
+			TrackID:    42,
+			PlateText:  "ABC1234",
+			Confidence: 0.9,
+		},
+		"reused-key",
+	)
+	if err != nil || !created {
+		t.Fatalf("first Create() = created %v, err %v", created, err)
+	}
+
+	_, _, err = service.Create(
+		context.Background(),
+		CreateDetectionInput{
+			CameraID:   "CAM-01",
+			TrackID:    43,
+			PlateText:  "XYZ987",
+			Confidence: 0.9,
+		},
+		"reused-key",
+	)
+	if err == nil {
+		t.Fatal("second Create() error = nil, want conflict")
+	}
+
+	var conflict ConflictError
+	if !errors.As(err, &conflict) {
+		t.Fatalf("second Create() error = %T, want ConflictError", err)
 	}
 }
