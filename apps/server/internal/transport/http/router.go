@@ -317,6 +317,8 @@ func (h *Handler) writeApplicationError(w http.ResponseWriter, r *http.Request, 
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{
 			"error": validationError.Error(),
 		})
+	case errors.Is(err, ports.ErrNotFound):
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 	case errors.Is(err, context.DeadlineExceeded):
 		writeJSON(w, http.StatusGatewayTimeout, map[string]string{"error": "request timed out"})
 	default:
