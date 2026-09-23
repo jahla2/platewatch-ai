@@ -41,15 +41,16 @@ func (s *Store) Close() {
 	s.pool.Close()
 }
 
-func (s *Store) Save(ctx context.Context, event domain.DetectionEvent) error {
-	_, err := s.pool.Exec(
+func (s *Store) SaveIfAbsent(ctx context.Context, event domain.DetectionEvent) (bool, error) {
+	command, err := s.pool.Exec(
 		ctx,
 		`INSERT INTO detection_events
-			(id, camera_id, track_id, plate_number, plate_text, confidence, flagged,
+			(id, idempotency_key, camera_id, track_id, plate_number, plate_text, confidence, flagged,
 			 snapshot_url, plate_crop_url, detected_at)
-		  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-		  ON CONFLICT (id) DO NOTHING`,
+		  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		  ON CONFLICT (idempotency_key) DO NOTHING`,
 		event.ID,
+		event.IdempotencyKey,
 		event.CameraID,
 		event.TrackID,
 		event.PlateKey,
@@ -60,7 +61,14 @@ func (s *Store) Save(ctx context.Context, event domain.DetectionEvent) error {
 		event.PlateCropURL,
 		event.DetectedAt,
 	)
-	return err
+	if err != nil {
+		return false, err
+	}
+	return command.RowsAffected() == 1, nil
+}
+
+func (s *Store) Ping(ctx context.Context) error {
+	return s.pool.Ping(ctx)
 }
 
 func (s *Store) List(ctx context.Context, limit int) ([]domain.DetectionEvent, error) {
