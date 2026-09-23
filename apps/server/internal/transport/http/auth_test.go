@@ -93,7 +93,6 @@ func TestSessionAuthorizerRejectsInvalidOperatorToken(t *testing.T) {
 	}
 }
 
-
 func TestSessionAuthorizerRejectsExpiredCookie(t *testing.T) {
 	auth := NewSessionAuthorizer(
 		"operator-token-1234567890123456",
