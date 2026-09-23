@@ -64,9 +64,8 @@ jobs:
           git diff --exit-code -- go.mod go.sum
       - name: Format check
         run: |
-          unformatted="$(gofmt -l .)"
-          echo "$unformatted"
-          test -z "$unformatted"
+          gofmt -d . | tee /tmp/gofmt.diff
+          test ! -s /tmp/gofmt.diff
       - name: Test with race detector
         run: go test -race ./...
       - name: Verify database backup and restoration
