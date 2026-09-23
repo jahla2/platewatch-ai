@@ -371,6 +371,8 @@ func (h *Handler) writeApplicationError(w http.ResponseWriter, r *http.Request, 
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{
 			"error": validationError.Error(),
 		})
+	case errors.As(err, new(application.ConflictError)):
+		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 	case errors.Is(err, ports.ErrNotFound):
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 	case errors.Is(err, context.DeadlineExceeded):
