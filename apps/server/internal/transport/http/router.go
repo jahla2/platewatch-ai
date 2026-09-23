@@ -369,13 +369,14 @@ func (h *Handler) streamEvents(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) writeApplicationError(w http.ResponseWriter, r *http.Request, err error) {
 	var validationError application.ValidationError
+	var conflictError application.ConflictError
 	switch {
 	case errors.As(err, &validationError):
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{
 			"error": validationError.Error(),
 		})
-	case errors.As(err, new(application.ConflictError)):
-		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+	case errors.As(err, &conflictError):
+		writeJSON(w, http.StatusConflict, map[string]string{"error": conflictError.Error()})
 	case errors.Is(err, ports.ErrNotFound):
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 	case errors.Is(err, context.DeadlineExceeded):
