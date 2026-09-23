@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,6 +18,9 @@ import (
 )
 
 func main() {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	slog.SetDefault(logger)
+
 	port := env("PLATEWATCH_SERVER_PORT", "8080")
 	webOrigin := env("PLATEWATCH_WEB_ORIGIN", "http://localhost:3000")
 	databaseURL := requiredEnv("DATABASE_URL")
@@ -27,12 +32,14 @@ func main() {
 
 	store, err := postgres.Open(startupCtx, databaseURL)
 	if err != nil {
-		log.Fatalf("database startup failed: %v", err)
+		logger.Error("database_startup_failed", "error", err)
+		os.Exit(1)
 	}
 	defer store.Close()
 
 	if err := seedWatchlist(startupCtx, store, os.Getenv("PLATEWATCH_FLAGGED_PLATES")); err != nil {
-		log.Fatalf("watchlist seed failed: %v", err)
+		logger.Error("watchlist_seed_failed", "error", err)
+		os.Exit(1)
 	}
 
 	broker := realtime.NewBroker()
@@ -42,29 +49,33 @@ func main() {
 		detectionService,
 		watchlistService,
 		broker,
+		store,
 		webOrigin,
 		httptransport.NewBearerAuthorizer(internalToken),
 		httptransport.NewBearerAuthorizer(adminToken),
+		httptransport.NewRateLimiter(envInt("PLATEWATCH_PUBLIC_RATE_LIMIT_PER_MINUTE", 120), time.Minute),
+		httptransport.NewRateLimiter(envInt("PLATEWATCH_INTERNAL_RATE_LIMIT_PER_MINUTE", 600), time.Minute),
+		httptransport.NewRateLimiter(envInt("PLATEWATCH_ADMIN_RATE_LIMIT_PER_MINUTE", 60), time.Minute),
+		logger,
 	)
 
 	server := &http.Server{
 		Addr:              ":" + port,
 		Handler:           handler.Routes(),
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      30 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
 
-	log.Printf("PlateWatch server listening on %s", server.Addr)
+	logger.Info("server_listening", "address", server.Addr)
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		log.Fatal(err)
+		logger.Error("server_stopped", "error", err)
+		os.Exit(1)
 	}
 }
 
-func seedWatchlist(
-	ctx context.Context,
-	store *postgres.Store,
-	value string,
-) error {
+func seedWatchlist(ctx context.Context, store *postgres.Store, value string) error {
 	for _, plate := range strings.Split(value, ",") {
 		plateText := strings.TrimSpace(plate)
 		plateKey := domain.CanonicalizePlateText(plateText)
@@ -91,6 +102,18 @@ func env(key string, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func envInt(key string, fallback int) int {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed < 1 {
+		log.Fatalf("%s must be a positive integer", key)
+	}
+	return parsed
 }
 
 func requiredEnv(key string) string {
