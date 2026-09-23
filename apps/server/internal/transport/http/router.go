@@ -1,10 +1,13 @@
 package httptransport
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/jahla2/platewatch-ai/apps/server/internal/application"
 	"github.com/jahla2/platewatch-ai/apps/server/internal/ports"
@@ -16,60 +19,110 @@ type Handler struct {
 	detectionService *application.DetectionService
 	watchlistService *application.WatchlistService
 	subscriber       ports.DetectionSubscriber
+	readiness        ports.HealthChecker
 	webOrigin        string
 	internalAuth     *BearerAuthorizer
 	adminAuth        *BearerAuthorizer
+	publicLimiter    *RateLimiter
+	internalLimiter  *RateLimiter
+	adminLimiter     *RateLimiter
+	logger           *slog.Logger
 }
 
 func NewHandler(
 	detectionService *application.DetectionService,
 	watchlistService *application.WatchlistService,
 	subscriber ports.DetectionSubscriber,
+	readiness ports.HealthChecker,
 	webOrigin string,
 	internalAuth *BearerAuthorizer,
 	adminAuth *BearerAuthorizer,
+	publicLimiter *RateLimiter,
+	internalLimiter *RateLimiter,
+	adminLimiter *RateLimiter,
+	logger *slog.Logger,
 ) *Handler {
 	return &Handler{
 		detectionService: detectionService,
 		watchlistService: watchlistService,
 		subscriber:       subscriber,
+		readiness:        readiness,
 		webOrigin:        webOrigin,
 		internalAuth:     internalAuth,
 		adminAuth:        adminAuth,
+		publicLimiter:    publicLimiter,
+		internalLimiter:  internalLimiter,
+		adminLimiter:     adminLimiter,
+		logger:           logger,
 	}
 }
 
 func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", h.health)
-	mux.HandleFunc("GET /api/v1/detections", h.listDetections)
-	mux.HandleFunc("GET /api/v1/events/stream", h.streamEvents)
+	mux.HandleFunc("GET /readyz", h.ready)
+	mux.Handle(
+		"GET /api/v1/detections",
+		h.publicLimiter.Middleware(http.HandlerFunc(h.listDetections)),
+	)
+	mux.Handle(
+		"GET /api/v1/events/stream",
+		h.publicLimiter.Middleware(http.HandlerFunc(h.streamEvents)),
+	)
 	mux.Handle(
 		"POST /internal/v1/detections",
-		h.internalAuth.Middleware(http.HandlerFunc(h.createDetection)),
+		h.internalLimiter.Middleware(
+			h.internalAuth.Middleware(http.HandlerFunc(h.createDetection)),
+		),
 	)
 	mux.Handle(
 		"GET /api/v1/watchlist",
-		h.adminAuth.Middleware(http.HandlerFunc(h.listWatchlist)),
+		h.adminLimiter.Middleware(
+			h.adminAuth.Middleware(http.HandlerFunc(h.listWatchlist)),
+		),
 	)
 	mux.Handle(
 		"PUT /api/v1/watchlist/{plate}",
-		h.adminAuth.Middleware(http.HandlerFunc(h.upsertWatchlist)),
+		h.adminLimiter.Middleware(
+			h.adminAuth.Middleware(http.HandlerFunc(h.upsertWatchlist)),
+		),
 	)
 	mux.Handle(
 		"DELETE /api/v1/watchlist/{plate}",
-		h.adminAuth.Middleware(http.HandlerFunc(h.deleteWatchlist)),
+		h.adminLimiter.Middleware(
+			h.adminAuth.Middleware(http.HandlerFunc(h.deleteWatchlist)),
+		),
 	)
-	return h.securityHeaders(h.withCORS(mux))
+
+	handler := h.securityHeaders(h.withCORS(mux))
+	handler = requestIDMiddleware(handler)
+	return requestLoggingMiddleware(h.logger, handler)
 }
 
 func (h *Handler) health(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
+func (h *Handler) ready(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancel()
+
+	if err := h.readiness.Ping(ctx); err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "not_ready"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
+}
+
 func (h *Handler) createDetection(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
+
+	idempotencyKey := r.Header.Get("Idempotency-Key")
+	if idempotencyKey == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Idempotency-Key header is required"})
+		return
+	}
 
 	var input application.CreateDetectionInput
 	decoder := json.NewDecoder(r.Body)
@@ -78,10 +131,16 @@ func (h *Handler) createDetection(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON payload"})
 		return
 	}
+	input.IdempotencyKey = idempotencyKey
 
-	event, err := h.detectionService.Create(r.Context(), input)
+	event, created, err := h.detectionService.Create(r.Context(), input)
 	if err != nil {
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
+		return
+	}
+	if !created {
+		w.Header().Set("X-Idempotent-Replay", "true")
+		writeJSON(w, http.StatusOK, event)
 		return
 	}
 	writeJSON(w, http.StatusCreated, event)
@@ -172,7 +231,7 @@ func (h *Handler) streamEvents(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", h.webOrigin)
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Idempotency-Key")
 		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
 		w.Header().Set("Vary", "Origin")
 		if r.Method == http.MethodOptions {
