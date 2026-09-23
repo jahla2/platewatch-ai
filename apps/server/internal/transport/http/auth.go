@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -51,6 +52,7 @@ type SessionAuthorizer struct {
 	sessionSecret string
 	secureCookie  bool
 	sessionTTL    time.Duration
+	now           func() time.Time
 }
 
 func NewSessionAuthorizer(
@@ -67,6 +69,7 @@ func NewSessionAuthorizer(
 		sessionSecret: strings.TrimSpace(sessionSecret),
 		secureCookie:  secureCookie,
 		sessionTTL:    sessionTTL,
+		now:           time.Now,
 	}
 }
 
@@ -75,10 +78,12 @@ func (a *SessionAuthorizer) Authenticate(w http.ResponseWriter, providedToken st
 		return false
 	}
 
+	expiresAt := a.now().Add(a.sessionTTL).UTC()
 	http.SetCookie(w, &http.Cookie{
 		Name:     operatorSessionCookie,
-		Value:    a.sessionValue(),
+		Value:    a.sessionValue(expiresAt),
 		Path:     "/",
+		Expires:  expiresAt,
 		MaxAge:   int(a.sessionTTL.Seconds()),
 		HttpOnly: true,
 		Secure:   a.secureCookie,
@@ -109,7 +114,7 @@ func (a *SessionAuthorizer) Middleware(next http.Handler) http.Handler {
 		}
 
 		cookie, err := r.Cookie(operatorSessionCookie)
-		if err != nil || !constantTimeEqual(cookie.Value, a.sessionValue()) {
+		if err != nil || !a.validSession(cookie.Value) {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 			return
 		}
@@ -121,9 +126,35 @@ func (a *SessionAuthorizer) configured() bool {
 	return a.operatorToken != "" && a.sessionSecret != ""
 }
 
-func (a *SessionAuthorizer) sessionValue() string {
+func (a *SessionAuthorizer) sessionValue(expiresAt time.Time) string {
+	expiry := strconv.FormatInt(expiresAt.Unix(), 10)
+	signature := a.sign(expiry)
+	return expiry + "." + signature
+}
+
+func (a *SessionAuthorizer) validSession(value string) bool {
+	expiryText, signature, found := strings.Cut(value, ".")
+	if !found || expiryText == "" || signature == "" {
+		return false
+	}
+
+	expiryUnix, err := strconv.ParseInt(expiryText, 10, 64)
+	if err != nil {
+		return false
+	}
+	expiresAt := time.Unix(expiryUnix, 0)
+	if !a.now().Before(expiresAt) {
+		return false
+	}
+
+	return constantTimeEqual(signature, a.sign(expiryText))
+}
+
+func (a *SessionAuthorizer) sign(expiry string) string {
 	mac := hmac.New(sha256.New, []byte(a.sessionSecret))
 	_, _ = mac.Write([]byte(a.operatorToken))
+	_, _ = mac.Write([]byte("|"))
+	_, _ = mac.Write([]byte(expiry))
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
