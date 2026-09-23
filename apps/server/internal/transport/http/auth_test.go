@@ -41,7 +41,6 @@ func TestBearerAuthorizerAcceptsValidToken(t *testing.T) {
 	}
 }
 
-
 func TestSessionAuthorizerSetsHttpOnlyCookieAndAuthorizes(t *testing.T) {
 	auth := NewSessionAuthorizer(
 		"operator-token-1234567890123456",
@@ -91,5 +90,37 @@ func TestSessionAuthorizerRejectsInvalidOperatorToken(t *testing.T) {
 	response := httptest.NewRecorder()
 	if auth.Authenticate(response, "wrong-token") {
 		t.Fatal("Authenticate() = true, want false")
+	}
+}
+
+
+func TestSessionAuthorizerRejectsExpiredCookie(t *testing.T) {
+	auth := NewSessionAuthorizer(
+		"operator-token-1234567890123456",
+		"session-secret-123456789012345678901234567890",
+		false,
+		time.Minute,
+	)
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	auth.now = func() time.Time { return now }
+
+	login := httptest.NewRecorder()
+	if !auth.Authenticate(login, "operator-token-1234567890123456") {
+		t.Fatal("Authenticate() = false, want true")
+	}
+	cookie := login.Result().Cookies()[0]
+
+	now = now.Add(2 * time.Minute)
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/detections", nil)
+	request.AddCookie(cookie)
+	response := httptest.NewRecorder()
+
+	auth.Middleware(next).ServeHTTP(response, request)
+
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusUnauthorized)
 	}
 }
