@@ -8,19 +8,29 @@ import (
 )
 
 type DetectionRepository struct {
-	mu     sync.RWMutex
-	events []domain.DetectionEvent
+	mu              sync.RWMutex
+	events          []domain.DetectionEvent
+	idempotencyKeys map[string]struct{}
 }
 
 func NewDetectionRepository() *DetectionRepository {
-	return &DetectionRepository{}
+	return &DetectionRepository{idempotencyKeys: make(map[string]struct{})}
 }
 
-func (r *DetectionRepository) Save(_ context.Context, event domain.DetectionEvent) error {
+func (r *DetectionRepository) SaveIfAbsent(
+	_ context.Context,
+	event domain.DetectionEvent,
+) (bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	if _, exists := r.idempotencyKeys[event.IdempotencyKey]; exists {
+		return false, nil
+	}
+
+	r.idempotencyKeys[event.IdempotencyKey] = struct{}{}
 	r.events = append(r.events, event)
-	return nil
+	return true, nil
 }
 
 func (r *DetectionRepository) List(_ context.Context, limit int) ([]domain.DetectionEvent, error) {
