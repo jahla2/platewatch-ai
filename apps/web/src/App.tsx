@@ -1,9 +1,16 @@
-import { useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 
-import { listDetections, subscribeToDetections } from "./api";
+import {
+  createOperatorSession,
+  deleteOperatorSession,
+  hasOperatorSession,
+  listDetections,
+  subscribeToDetections,
+} from "./api";
 import type { DetectionEvent } from "./domain";
 
 type LoadState = "loading" | "success" | "error";
+type AuthState = "checking" | "authenticated" | "unauthenticated" | "error";
 
 function mergeUnique(
   current: DetectionEvent[],
@@ -21,12 +28,29 @@ function mergeUnique(
 }
 
 export function App() {
+  const [authState, setAuthState] = useState<AuthState>("checking");
+  const [operatorToken, setOperatorToken] = useState("");
+  const [authError, setAuthError] = useState("");
+  const [loggingIn, setLoggingIn] = useState(false);
+
   const [events, setEvents] = useState<DetectionEvent[]>([]);
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [streamStatus, setStreamStatus] = useState("Connecting");
   const [errorMessage, setErrorMessage] = useState("");
   const [nextCursor, setNextCursor] = useState<string | undefined>();
   const [loadingMore, setLoadingMore] = useState(false);
+
+  const verifySession = useCallback(async () => {
+    setAuthState("checking");
+    setAuthError("");
+    try {
+      const authenticated = await hasOperatorSession();
+      setAuthState(authenticated ? "authenticated" : "unauthenticated");
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "Unable to verify session");
+      setAuthState("error");
+    }
+  }, []);
 
   const loadInitial = useCallback(async () => {
     setLoadState("loading");
@@ -38,14 +62,24 @@ export function App() {
       setNextCursor(page.next_cursor);
       setLoadState("success");
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Failed to load detections");
+      const message = error instanceof Error ? error.message : "Failed to load detections";
+      if (message === "Operator session expired") {
+        setAuthState("unauthenticated");
+        return;
+      }
+      setErrorMessage(message);
       setLoadState("error");
     }
   }, []);
 
   useEffect(() => {
-    void loadInitial();
+    void verifySession();
+  }, [verifySession]);
 
+  useEffect(() => {
+    if (authState !== "authenticated") return undefined;
+
+    void loadInitial();
     const unsubscribe = subscribeToDetections(
       (event) => {
         setEvents((current) => mergeUnique([event], current));
@@ -56,7 +90,36 @@ export function App() {
     );
 
     return unsubscribe;
-  }, [loadInitial]);
+  }, [authState, loadInitial]);
+
+  const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!operatorToken.trim() || loggingIn) return;
+
+    setLoggingIn(true);
+    setAuthError("");
+    try {
+      await createOperatorSession(operatorToken);
+      setOperatorToken("");
+      setAuthState("authenticated");
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "Sign in failed");
+      setAuthState("unauthenticated");
+    } finally {
+      setLoggingIn(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await deleteOperatorSession();
+    } finally {
+      setEvents([]);
+      setNextCursor(undefined);
+      setStreamStatus("Connecting");
+      setAuthState("unauthenticated");
+    }
+  };
 
   const loadMore = async () => {
     if (!nextCursor || loadingMore) return;
@@ -68,11 +131,56 @@ export function App() {
       setEvents((current) => mergeUnique(current, page.items));
       setNextCursor(page.next_cursor);
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Failed to load older detections");
+      const message = error instanceof Error ? error.message : "Failed to load older detections";
+      if (message === "Operator session expired") {
+        setAuthState("unauthenticated");
+        return;
+      }
+      setErrorMessage(message);
     } finally {
       setLoadingMore(false);
     }
   };
+
+  if (authState !== "authenticated") {
+    return (
+      <main className="loginShell">
+        <section className="loginCard">
+          <p className="eyebrow">PlateWatch operator access</p>
+          <h1>PlateWatch</h1>
+
+          {authState === "checking" ? (
+            <div className="loginState" role="status">
+              <span className="spinner" aria-hidden="true" />
+              Checking session…
+            </div>
+          ) : (
+            <form onSubmit={(event) => void handleLogin(event)}>
+              <label htmlFor="operator-token">Operator token</label>
+              <input
+                id="operator-token"
+                type="password"
+                autoComplete="current-password"
+                value={operatorToken}
+                onChange={(event) => setOperatorToken(event.target.value)}
+                disabled={loggingIn}
+                required
+              />
+              {authError ? <p className="loginError">{authError}</p> : null}
+              <button type="submit" disabled={loggingIn || !operatorToken.trim()}>
+                {loggingIn ? "Signing in…" : "Sign in"}
+              </button>
+              {authState === "error" ? (
+                <button type="button" className="secondaryButton" onClick={() => void verifySession()}>
+                  Retry connection
+                </button>
+              ) : null}
+            </form>
+          )}
+        </section>
+      </main>
+    );
+  }
 
   const flaggedCount = events.filter((event) => event.flagged).length;
   const hasEvents = events.length > 0;
@@ -87,9 +195,14 @@ export function App() {
             Confirmed plate detections with evidence from the live vision pipeline.
           </p>
         </div>
-        <span className={`status ${streamStatus === "Live" ? "statusLive" : ""}`}>
-          {streamStatus}
-        </span>
+        <div className="headerActions">
+          <span className={`status ${streamStatus === "Live" ? "statusLive" : ""}`}>
+            {streamStatus}
+          </span>
+          <button type="button" className="secondaryButton" onClick={() => void handleLogout()}>
+            Sign out
+          </button>
+        </div>
       </header>
 
       <section className="metrics" aria-label="Detection summary">
