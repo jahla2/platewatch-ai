@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from dataclasses import asdict
+import logging
+import os
 
 from fastapi import FastAPI, HTTPException, Response, status
 from pydantic import BaseModel, Field
@@ -11,8 +13,12 @@ from platewatch_vision.application.bootstrap import (
     build_vision_worker,
 )
 from platewatch_vision.application.vision_worker import VisionWorker
+from platewatch_vision.config.logging import configure_logging
 from platewatch_vision.config.settings import VisionSettings
 from platewatch_vision.domain.models import PlateCandidate
+
+configure_logging(os.getenv("PLATEWATCH_LOG_LEVEL", "INFO"))
+logger = logging.getLogger(__name__)
 
 _settings = VisionSettings.from_env()
 _processor = build_plate_processor(_settings)
@@ -30,6 +36,7 @@ async def lifespan(_: FastAPI):
             _worker.start()
         except Exception as exc:
             _startup_error = str(exc)
+            logger.exception("vision_startup_failed")
 
     try:
         yield
