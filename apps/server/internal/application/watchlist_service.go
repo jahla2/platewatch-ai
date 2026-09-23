@@ -38,6 +38,11 @@ func (s *WatchlistService) Upsert(
 	if plateText == "" || plateKey == "" {
 		return domain.WatchlistEntry{}, NewValidationError("plate_text is required")
 	}
+	if len(plateText) > 128 || len(plateKey) > 128 {
+		return domain.WatchlistEntry{}, NewValidationError(
+			"plate text must be 128 characters or fewer",
+		)
+	}
 
 	reason := strings.TrimSpace(input.Reason)
 	if len(reason) > 500 {
