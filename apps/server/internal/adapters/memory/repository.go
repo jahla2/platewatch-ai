@@ -8,31 +8,55 @@ import (
 )
 
 type DetectionRepository struct {
-	mu     sync.RWMutex
-	events []domain.DetectionEvent
+	mu          sync.RWMutex
+	events      []domain.DetectionEvent
+	idempotency map[string]domain.DetectionEvent
 }
 
 func NewDetectionRepository() *DetectionRepository {
-	return &DetectionRepository{}
+	return &DetectionRepository{
+		idempotency: make(map[string]domain.DetectionEvent),
+	}
 }
 
-func (r *DetectionRepository) Save(_ context.Context, event domain.DetectionEvent) error {
+func (r *DetectionRepository) SaveIdempotent(
+	_ context.Context,
+	idempotencyKey string,
+	event domain.DetectionEvent,
+) (domain.DetectionEvent, bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	if existing, found := r.idempotency[idempotencyKey]; found {
+		return existing, false, nil
+	}
+
+	event.IdempotencyKey = idempotencyKey
 	r.events = append(r.events, event)
-	return nil
+	r.idempotency[idempotencyKey] = event
+	return event, true, nil
 }
 
-func (r *DetectionRepository) List(_ context.Context, limit int) ([]domain.DetectionEvent, error) {
+func (r *DetectionRepository) List(
+	_ context.Context,
+	limit int,
+	cursor *domain.DetectionCursor,
+) ([]domain.DetectionEvent, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	if limit > len(r.events) {
-		limit = len(r.events)
-	}
 	result := make([]domain.DetectionEvent, 0, limit)
-	for index := len(r.events) - 1; index >= len(r.events)-limit; index-- {
-		result = append(result, r.events[index])
+	for index := len(r.events) - 1; index >= 0 && len(result) < limit; index-- {
+		event := r.events[index]
+		if cursor != nil {
+			if event.DetectedAt.After(cursor.DetectedAt) {
+				continue
+			}
+			if event.DetectedAt.Equal(cursor.DetectedAt) && event.ID >= cursor.ID {
+				continue
+			}
+		}
+		result = append(result, event)
 	}
 	return result, nil
 }
