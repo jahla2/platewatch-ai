@@ -161,7 +161,6 @@ func TestStoreConcurrentIdempotencyCreatesSingleRow(t *testing.T) {
 	}
 }
 
-
 func TestStoreHandlesConcurrentDistinctWrites(t *testing.T) {
 	store, ctx := openTestStore(t)
 
@@ -211,7 +210,6 @@ func TestStoreHandlesConcurrentDistinctWrites(t *testing.T) {
 		t.Fatalf("row count = %d, want %d", rowCount, workers)
 	}
 }
-
 
 func TestStoreListsLegacyRowsWithoutIdempotencyKey(t *testing.T) {
 	store, ctx := openTestStore(t)
