@@ -7,7 +7,7 @@ import (
 )
 
 type DetectionRepository interface {
-	Save(ctx context.Context, event domain.DetectionEvent) error
+	SaveIfAbsent(ctx context.Context, event domain.DetectionEvent) (bool, error)
 	List(ctx context.Context, limit int) ([]domain.DetectionEvent, error)
 }
 
@@ -23,6 +23,10 @@ type WatchlistStore interface {
 		entry domain.WatchlistEntry,
 	) (domain.WatchlistEntry, error)
 	DeleteWatchlist(ctx context.Context, plate string) error
+}
+
+type HealthChecker interface {
+	Ping(ctx context.Context) error
 }
 
 type DetectionPublisher interface {
