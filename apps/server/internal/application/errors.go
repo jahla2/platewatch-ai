@@ -17,3 +17,15 @@ func (e ValidationError) Error() string {
 func WrapValidationError(format string, args ...any) error {
 	return ValidationError{message: fmt.Sprintf(format, args...)}
 }
+
+type ConflictError struct {
+	message string
+}
+
+func NewConflictError(message string) error {
+	return ConflictError{message: message}
+}
+
+func (e ConflictError) Error() string {
+	return e.message
+}
