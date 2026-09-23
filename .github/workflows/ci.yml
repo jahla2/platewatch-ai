@@ -98,8 +98,8 @@ jobs:
     name: Runtime configuration
     runs-on: ubuntu-latest
     env:
-      PLATEWATCH_INTERNAL_TOKEN: test-internal-token
-      PLATEWATCH_ADMIN_TOKEN: test-admin-token
+      PLATEWATCH_INTERNAL_TOKEN: test-internal-token-1234567890
+      PLATEWATCH_ADMIN_TOKEN: test-admin-token-123456789012
       PLATEWATCH_OPERATOR_TOKEN: test-operator-token-long-enough
       PLATEWATCH_SESSION_SECRET: test-session-secret-at-least-32-characters-long
       POSTGRES_PASSWORD: test-password
@@ -112,3 +112,29 @@ jobs:
         run: docker compose config --quiet
       - name: Build application containers
         run: docker compose build server web
+      - name: End-to-end operator API smoke test
+        run: |
+          set -euo pipefail
+          cleanup() { docker compose down -v >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+
+          docker compose up -d postgres server web
+
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3000/healthz >/dev/null; then
+              break
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              docker compose ps
+              docker compose logs server web postgres
+              exit 1
+            fi
+            sleep 2
+          done
+
+          status="$(
+            curl -sS -o /tmp/login.out -w '%{http_code}'               -c /tmp/platewatch.cookies               -H 'Content-Type: application/json'               -d '{"token":"test-operator-token-long-enough"}'               http://127.0.0.1:3000/api/v1/session
+          )"
+          test "$status" = "204"
+
+          curl -fsS             -b /tmp/platewatch.cookies             'http://127.0.0.1:3000/api/v1/detections?limit=1'             | grep -q '"items"'
