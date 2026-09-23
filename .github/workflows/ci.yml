@@ -61,8 +61,16 @@ jobs:
           unformatted="$(gofmt -l .)"
           echo "$unformatted"
           test -z "$unformatted"
-      - name: Test
-        run: go test ./...
+      - name: Test with race detector
+        run: go test -race ./...
+      - name: Verify database backup and restoration
+        env:
+          POSTGRES_DB: platewatch_test
+          POSTGRES_USER: platewatch
+        run: |
+          container_id="$(docker ps --filter ancestor=postgres:17-alpine --format '{{.ID}}' | head -n 1)"
+          test -n "$container_id"
+          bash ../../scripts/verify-db-backup-restore.sh "$container_id"
 
   web:
     name: React web
