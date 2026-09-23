@@ -79,6 +79,11 @@ func (s *DetectionService) Create(
 	if cameraID == "" {
 		return domain.DetectionEvent{}, false, NewValidationError("camera_id is required")
 	}
+	if len(cameraID) > 128 {
+		return domain.DetectionEvent{}, false, NewValidationError(
+			"camera_id must be 128 characters or fewer",
+		)
+	}
 	if input.TrackID <= 0 {
 		return domain.DetectionEvent{}, false, NewValidationError("track_id must be positive")
 	}
@@ -98,6 +103,11 @@ func (s *DetectionService) Create(
 	if input.Confidence < 0 || input.Confidence > 1 {
 		return domain.DetectionEvent{}, false, NewValidationError(
 			"confidence must be between 0 and 1",
+		)
+	}
+	if len(snapshotURL) > 1024 || len(plateCropURL) > 1024 {
+		return domain.DetectionEvent{}, false, NewValidationError(
+			"evidence URLs must be 1024 characters or fewer",
 		)
 	}
 	if !validEvidenceURL(snapshotURL) || !validEvidenceURL(plateCropURL) {
