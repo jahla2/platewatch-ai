@@ -30,6 +30,8 @@ func main() {
 	databaseURL := requiredEnv(logger, "DATABASE_URL")
 	internalToken := requiredSecret(logger, "PLATEWATCH_INTERNAL_TOKEN", 24)
 	adminToken := requiredSecret(logger, "PLATEWATCH_ADMIN_TOKEN", 24)
+	operatorToken := requiredSecret(logger, "PLATEWATCH_OPERATOR_TOKEN", 24)
+	sessionSecret := requiredSecret(logger, "PLATEWATCH_SESSION_SECRET", 32)
 
 	startupCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -57,6 +59,12 @@ func main() {
 		store,
 		httptransport.NewBearerAuthorizer(internalToken),
 		httptransport.NewBearerAuthorizer(adminToken),
+		httptransport.NewSessionAuthorizer(
+			operatorToken,
+			sessionSecret,
+			envBool("PLATEWATCH_SESSION_SECURE", false),
+			time.Duration(envInt("PLATEWATCH_SESSION_HOURS", 12))*time.Hour,
+		),
 		logger,
 		metrics,
 		httptransport.HandlerConfig{
@@ -65,6 +73,7 @@ func main() {
 			PublicRequestsPerMin: envInt("PLATEWATCH_RATE_LIMIT_PUBLIC_RPM", 120),
 			InternalEventsPerMin: envInt("PLATEWATCH_RATE_LIMIT_INTERNAL_RPM", 1200),
 			AdminRequestsPerMin:  envInt("PLATEWATCH_RATE_LIMIT_ADMIN_RPM", 60),
+			LoginRequestsPerMin:  envInt("PLATEWATCH_RATE_LIMIT_LOGIN_RPM", 10),
 		},
 	)
 
@@ -144,6 +153,21 @@ func env(key string, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func envBool(key string, fallback bool) bool {
+	value := strings.TrimSpace(strings.ToLower(os.Getenv(key)))
+	if value == "" {
+		return fallback
+	}
+	switch value {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return fallback
+	}
 }
 
 func envInt(key string, fallback int) int {
