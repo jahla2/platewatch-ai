@@ -58,3 +58,27 @@ func TestBrokerConcurrentPublishAndSubscribe(t *testing.T) {
 		t.Fatal("expected at least one event across subscribers")
 	}
 }
+
+
+func TestBrokerClosesOverloadedSubscriber(t *testing.T) {
+	broker := NewBroker()
+	channel, cancel := broker.Subscribe()
+	defer cancel()
+
+	for index := 0; index <= subscriberBufferSize; index++ {
+		if err := broker.Publish(context.Background(), domain.DetectionEvent{
+			ID:      "evt",
+			TrackID: int64(index + 1),
+		}); err != nil {
+			t.Fatalf("Publish() error = %v", err)
+		}
+	}
+
+	received := 0
+	for range channel {
+		received++
+	}
+	if received != subscriberBufferSize {
+		t.Fatalf("received buffered events = %d, want %d", received, subscriberBufferSize)
+	}
+}
